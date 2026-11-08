@@ -1,0 +1,22 @@
+[llm]
+provider = "gemini"
+model = "gemini-3.8-flash"
+api_key_env = "GEMINI_API_KEY"
+max_chunk_chars = 8000
+retries = 2
+
+[tts]
+provider = "gemini"
+model = "gemini-3.8-flash-lite-tts"
+api_key_env = "GEMINI_API_KEY"
+language = "en-us"
+speed = 1.0
+concurrency = 3
+
+[playback]
+lookahead = 3
+speaker_pause_ms = 180
+
+[paths]
+stories_dir = "stories"
+assets_dir = "~/.local/share/teller/models"
