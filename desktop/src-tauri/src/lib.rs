@@ -132,7 +132,7 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![get_backend_info])
         .on_window_event(|window, event| {
-            if let WindowEvent::Destroyed = event {
+            if matches!(event, WindowEvent::Destroyed | WindowEvent::CloseRequested { .. }) {
                 let state = window.state::<AppState>();
                 if let Ok(mut guard) = state.child.lock() {
                     if let Some(mut child) = guard.take() {
@@ -141,8 +141,18 @@ pub fn run() {
                 };
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Teller application");
+        .build(tauri::generate_context!())
+        .expect("error while building Teller application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                let state = app_handle.state::<AppState>();
+                if let Ok(mut guard) = state.child.lock() {
+                    if let Some(mut child) = guard.take() {
+                        let _ = child.kill();
+                    }
+                };
+            }
+        });
 }
 
 #[cfg(test)]

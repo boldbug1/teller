@@ -21,6 +21,9 @@ if exist "%RELEASE_EXE%" (
     echo [INFO] Starting Teller Desktop...
     echo [INFO] Python engine will start automatically in the background.
     echo.
+    rem Clean up any orphaned sidecar instances from previous forced exits
+    taskkill /f /im teller-sidecar-x86_64-pc-windows-msvc.exe >nul 2>&1
+    taskkill /f /im teller-sidecar.exe >nul 2>&1
     start "" "%RELEASE_EXE%"
     goto finish
 )
