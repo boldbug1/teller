@@ -61,3 +61,4 @@ def test_extract_text_from_file(tmp_path: Path) -> None:
     md_file = tmp_path / "sample.md"
     md_file.write_text("# Markdown Title\nContent", encoding="utf-8")
     assert "# Markdown Title" in extract_text_from_file(md_file)
+

@@ -118,3 +118,4 @@ def extract_story_title(text: str, filename_hint: str | None = None) -> str:
             return clean_snip
 
     return "Untitled Story"
+
