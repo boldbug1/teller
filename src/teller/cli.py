@@ -60,9 +60,12 @@ def _project(config: AppConfig, source: str, title: str | None = None) -> StoryP
         if not text.strip():
             raise typer.BadParameter(f"{candidate} is empty")
         return store.open_or_create(text, title or candidate.stem, candidate.name)
-    if candidate.is_dir():
-        return store.find(candidate)
-    return store.find(source)
+    try:
+        if candidate.is_dir():
+            return store.find(candidate)
+        return store.find(source)
+    except FileNotFoundError as error:
+        raise typer.BadParameter(str(error), param_hint="source") from None
 
 
 def _needs_analysis(project: StoryProject, force: bool) -> bool:
@@ -118,6 +121,9 @@ async def _analyze_project(
 def setup(
     mode: str | None = typer.Option(None, help="cloud or local"),
     model: str | None = typer.Option(None, help="Override the default Ollama model"),
+    tts: str | None = typer.Option(
+        None, help="Override TTS provider: gemini, kokoro, or elevenlabs"
+    ),
 ) -> None:
     """Configure a one-key cloud setup or a fully local setup."""
     selected = (mode or typer.prompt("Mode", default="cloud")).strip().casefold()
@@ -129,10 +135,17 @@ def setup(
         config.llm.provider = "gemini"
         config.llm.model = "gemini-3.8-flash"
         config.llm.api_key_env = "GEMINI_API_KEY"
-        config.tts.provider = "gemini"
-        config.tts.model = "gemini-3.8-flash-lite-tts"
-        config.tts.api_key_env = "GEMINI_API_KEY"
-        api_key = get_api_key("gemini", "GEMINI_API_KEY")
+        tts_choice = (tts or "gemini").strip().casefold()
+        if tts_choice == "elevenlabs":
+            config.tts.provider = "elevenlabs"
+            config.tts.model = "eleven_multilingual_v2"
+            config.tts.api_key_env = "ELEVENLABS_API_KEY"
+        else:
+            config.tts.provider = "gemini"
+            config.tts.model = "gemini-3.8-flash-lite-tts"
+            config.tts.api_key_env = "GEMINI_API_KEY"
+
+        api_key = get_api_key("gemini", config.llm.api_key_env)
         if not api_key:
             api_key = typer.prompt("Gemini API key", hide_input=True).strip()
             if not api_key:
@@ -140,28 +153,54 @@ def setup(
             if not store_api_key("gemini", api_key):
                 console.print(
                     "[yellow]Could not access the OS credential store. "
-                    "Set GEMINI_API_KEY before running Teller.[/yellow]"
+                    f"Set {config.llm.api_key_env} before running Teller.[/yellow]"
                 )
-                os.environ["GEMINI_API_KEY"] = api_key
+                os.environ[config.llm.api_key_env] = api_key
+
+        if config.tts.provider == "elevenlabs":
+            el_key = get_api_key("elevenlabs", config.tts.api_key_env)
+            if not el_key:
+                el_key = typer.prompt("ElevenLabs API key", hide_input=True).strip()
+                if not el_key:
+                    raise typer.BadParameter("An API key is required for ElevenLabs TTS")
+                if not store_api_key("elevenlabs", el_key):
+                    console.print(
+                        "[yellow]Could not access the OS credential store. "
+                        f"Set {config.tts.api_key_env} before running Teller.[/yellow]"
+                    )
+                    os.environ[config.tts.api_key_env] = el_key
     else:
         config.llm.provider = "ollama"
         config.llm.model = model or "qwen3:8b"
         config.llm.base_url = "http://localhost:11434"
-        config.tts.provider = "kokoro"
-        config.tts.model = "kokoro-v1.0-int8"
-        config.tts.concurrency = 1
-        console.print("Downloading Kokoro model assets once for offline use...")
-        last_message = ""
+        tts_choice = (tts or "kokoro").strip().casefold()
+        if tts_choice == "elevenlabs":
+            config.tts.provider = "elevenlabs"
+            config.tts.model = "eleven_multilingual_v2"
+            config.tts.api_key_env = "ELEVENLABS_API_KEY"
+            el_key = get_api_key("elevenlabs", config.tts.api_key_env)
+            if not el_key:
+                el_key = typer.prompt("ElevenLabs API key", hide_input=True).strip()
+                if not el_key:
+                    raise typer.BadParameter("An API key is required for ElevenLabs TTS")
+                if not store_api_key("elevenlabs", el_key):
+                    os.environ[config.tts.api_key_env] = el_key
+        else:
+            config.tts.provider = "kokoro"
+            config.tts.model = "kokoro-v1.0-int8"
+            config.tts.concurrency = 1
+            console.print("Downloading Kokoro model assets once for offline use...")
+            last_message = ""
 
-        def progress(message: str) -> None:
-            nonlocal last_message
-            if message != last_message:
-                console.print(f"\r{message}", end="")
-                last_message = message
+            def progress(message: str) -> None:
+                nonlocal last_message
+                if message != last_message:
+                    console.print(f"\r{message}", end="")
+                    last_message = message
 
-        ensure_kokoro_assets(config.paths.assets_dir, progress)
-        if last_message:
-            console.print()
+            ensure_kokoro_assets(config.paths.assets_dir, progress)
+            if last_message:
+                console.print()
 
     path = save_config(config)
     console.print(f"[green]Configuration saved:[/green] {path}")
@@ -175,21 +214,21 @@ def doctor() -> None:
     checks: list[tuple[str, bool, str]] = []
     checks.append(("Config", default_config_path().exists(), str(default_config_path())))
 
+    # LLM Provider check (independent)
     if config.llm.provider == "gemini":
         present = bool(get_api_key("gemini", config.llm.api_key_env))
-        checks.append(("Gemini key", present, config.llm.api_key_env))
+        checks.append(("Gemini LLM key", present, config.llm.api_key_env))
         try:
             create_llm(config)
-            create_tts(config)
-            checks.append(("Gemini SDK", True, "available"))
+            checks.append(("Gemini LLM SDK", True, "available"))
         except (RuntimeError, ImportError) as error:
-            checks.append(("Gemini SDK", False, str(error)))
-    else:
+            checks.append(("Gemini LLM SDK", False, str(error)))
+    elif config.llm.provider == "ollama":
         try:
             from ollama import Client
 
             response = Client(host=config.llm.base_url or "http://localhost:11434").list()
-            available = [item.model for item in response.models]
+            available = [str(item.model) for item in response.models if item.model]
             checks.append(
                 (
                     "Ollama",
@@ -199,6 +238,19 @@ def doctor() -> None:
             )
         except Exception as error:  # Ollama exposes transport-specific exceptions.
             checks.append(("Ollama", False, str(error)))
+    else:
+        checks.append(("LLM Provider", False, f"Unknown LLM provider: {config.llm.provider}"))
+
+    # TTS Provider check (independent)
+    if config.tts.provider == "gemini":
+        present = bool(get_api_key("gemini", config.tts.api_key_env))
+        checks.append(("Gemini TTS key", present, config.tts.api_key_env))
+        try:
+            create_tts(config)
+            checks.append(("Gemini TTS SDK", True, "available"))
+        except (RuntimeError, ImportError) as error:
+            checks.append(("Gemini TTS SDK", False, str(error)))
+    elif config.tts.provider == "kokoro":
         model_path, voices_path = kokoro_asset_paths(config.paths.assets_dir)
         model_ok = model_path.exists() and file_sha256(model_path) == KOKORO_MODEL_SHA256
         voices_ok = voices_path.exists() and file_sha256(voices_path) == KOKORO_VOICES_SHA256
@@ -211,6 +263,21 @@ def doctor() -> None:
             checks.append(("Kokoro SDK", True, "available"))
         except (RuntimeError, ImportError) as error:
             checks.append(("Kokoro SDK", False, str(error)))
+    elif config.tts.provider == "elevenlabs":
+        env_var = (
+            config.tts.api_key_env
+            if config.tts.api_key_env and config.tts.api_key_env != "GEMINI_API_KEY"
+            else "ELEVENLABS_API_KEY"
+        )
+        present = bool(get_api_key("elevenlabs", env_var))
+        checks.append(("ElevenLabs TTS key", present, env_var))
+        try:
+            create_tts(config)
+            checks.append(("ElevenLabs TTS SDK", True, "available"))
+        except (RuntimeError, ImportError, ValueError) as error:
+            checks.append(("ElevenLabs TTS SDK", False, str(error)))
+    else:
+        checks.append(("TTS Provider", False, f"Unknown TTS provider: {config.tts.provider}"))
 
     try:
         import sounddevice

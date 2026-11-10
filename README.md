@@ -7,6 +7,7 @@ audio ahead of playback, and caches every result.
 The first release supports:
 
 - One-key cloud mode with Gemini for speaker attribution and exact-text TTS.
+- ElevenLabs TTS support for cloud speech synthesis (`eleven_multilingual_v2` or `eleven_v4`).
 - Zero-key local mode with Ollama and Kokoro ONNX.
 - Persistent stories, characters, voices, segments, and WAV audio.
 - A provider interface designed to power a simple web UI later.
@@ -46,6 +47,17 @@ teller run path/to/story.txt
 The setup command stores the key in the operating system credential manager.
 You can instead set `GEMINI_API_KEY` before running Teller.
 
+### ElevenLabs TTS (Cloud)
+
+You can pair Gemini (or Ollama) for speaker attribution with ElevenLabs for voice synthesis:
+
+```console
+teller setup --mode cloud --tts elevenlabs
+teller doctor
+```
+
+Or configure `ELEVENLABS_API_KEY` in your environment or credential manager. ElevenLabs BYOK (Bring Your Own Key) incurs API usage on your ElevenLabs account; Teller caches generated audio to avoid duplicate paid requests.
+
 ## Local Setup
 
 Install [Ollama](https://ollama.com), then download a capable local model:
@@ -60,6 +72,40 @@ teller run path/to/story.txt
 Local setup downloads checksum-verified Kokoro INT8 and voice assets once
 (about 142 MB). After Ollama and Kokoro models are present, normal operation
 requires no internet connection and no API keys.
+
+## Desktop Application (Paper Theatre)
+
+Teller includes a native desktop application built with Tauri 2, React 19, TypeScript, and the Paper Theatre visual direction. It connects to the Teller Python sidecar over loopback with Bearer token authentication.
+
+### Running Desktop in Development
+
+1. Start the Python sidecar or run from the repo:
+   ```console
+   python -m teller.server --port 8000
+   ```
+
+2. Run the React frontend:
+   ```console
+   cd desktop
+   npm install
+   npm run dev
+   ```
+
+3. (Optional) Run inside the Tauri shell:
+   ```console
+   cd desktop
+   cargo tauri dev
+   ```
+
+### Building the Windows Sidecar
+
+Package the Python engine into a self-contained executable for the Tauri shell:
+
+```powershell
+.\scripts\build_sidecar.ps1
+```
+
+The output executable is placed at `desktop/src-tauri/binaries/teller-sidecar-x86_64-pc-windows-msvc.exe`.
 
 ## Commands
 

@@ -15,7 +15,7 @@ def get_api_key(provider: str, env_name: str) -> str | None:
     except ImportError:
         return None
     try:
-        return cast(str | None, keyring.get_password(SERVICE_NAME, provider))
+        return keyring.get_password(SERVICE_NAME, provider)
     except keyring.errors.KeyringError:
         return None
 

@@ -9,3 +9,11 @@ build/
 dist/
 stories/
 .env
+
+# Desktop / Frontend
+desktop/node_modules/
+desktop/dist/
+
+# Tauri / Rust target & sidecar executables
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/*.exe

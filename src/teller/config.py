@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10 only
-    import tomli as tomllib
+    import tomli as tomllib  # type: ignore[no-redef]
 
 
 APP_DIRS = PlatformDirs("teller", appauthor=False)

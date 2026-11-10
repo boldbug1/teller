@@ -6,12 +6,19 @@ max_chunk_chars = 8000
 retries = 2
 
 [tts]
+# Supported TTS providers: "gemini", "kokoro", or "elevenlabs"
 provider = "gemini"
 model = "gemini-3.8-flash-lite-tts"
 api_key_env = "GEMINI_API_KEY"
 language = "en-us"
 speed = 1.0
 concurrency = 3
+
+# For ElevenLabs TTS:
+# provider = "elevenlabs"
+# model = "eleven_multilingual_v2"
+# api_key_env = "ELEVENLABS_API_KEY"
+# speed = 1.0  # Supports 0.7 to 1.2
 
 [playback]
 lookahead = 3
