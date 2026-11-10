@@ -1,183 +1,181 @@
 # Teller
 
-Teller turns a plain-text story into multi-voice audio. It identifies dialogue,
-keeps a persistent character cast, assigns each character a voice, generates
-audio ahead of playback, and caches every result.
+> **Transform plain-text stories and books into multi-voice audio dramas.**  
+> Teller parses narration and dialogue, maintains a persistent character cast, assigns distinct voices, synthesizes speech ahead of playback, and provides one-click master audio downloads.
 
-The first release supports:
+---
 
-- One-key cloud mode with Gemini for speaker attribution and exact-text TTS.
-- ElevenLabs TTS support for cloud speech synthesis (`eleven_multilingual_v2` or `eleven_v4`).
-- Zero-key local mode with Ollama and Kokoro ONNX.
-- Persistent stories, characters, voices, segments, and WAV audio.
-- A provider interface designed to power a simple web UI later.
+## ⚡ Quick Start: 1-Click Desktop Launch
 
-## Requirements
+On Windows, simply run:
 
-- Python 3.10 through 3.13
-- An audio output device
-- Cloud mode: a Gemini API key
-- Local mode: Ollama and a downloaded Ollama model
-
-## Install
-
-Clone the project, then install Teller and both provider sets:
-
-```console
-python -m pip install -e ".[all]"
+```cmd
+start.bat
 ```
 
-For cloud-only or local-only installations:
+> **That's it!** `start.bat` automatically launches the packaged desktop application and connects to the native Python engine sidecar in the background. No manual server startup required.
+
+### What you can do right away:
+1. **Import Stories**: Click **+ Add Story** to paste text or import `.txt`, `.md`, `.pdf`, or `.docx` documents with automatic title detection.
+2. **Analyze & Cast**: Click **Analyze Story** to parse characters and dialogue using **Groq** (recommended, sub-second Llama 3.3), **Gemini**, **Ollama** (local), or the built-in offline **Rule-Based Engine**.
+3. **Assign Voices**: Customize character voices in **The Cast** rail using **Kokoro** (100% offline), **ElevenLabs**, or **Gemini**.
+4. **Render Voices**: Synthesize speech with live progress tracking and zero duplicate API calls (deterministic cache).
+5. **Download Master Audio**: Click **Download Audio** (on the stage or in the transport player) to save a clean, stitched `.wav` audiobook to your computer.
+
+---
+
+## 🎭 Screenshots
+
+<div align="center">
+  <img src="docs/images/teller-performance-view.jpg" alt="Teller Paper Theatre Performance View" width="95%" />
+  <p><em>The Paper Theatre Studio: multi-voice dialogue tagging, character cast rail, and synchronized audio playback.</em></p>
+</div>
+
+<div align="center">
+  <img src="docs/images/teller-studio-overview.jpg" alt="Teller Story Analysis & Voice Rendering" width="95%" />
+  <p><em>Real-time analysis progress, background voice synthesis, and one-click audio export.</em></p>
+</div>
+
+---
+
+## 🌟 Key Features
+
+- **Multi-Voice Dialogue Attribution**: Accurately separates narrator passages from character dialogue without rewriting your story.
+- **Ultra-Fast LLM Providers**:
+  - **Groq** *(Llama 3.3 70B & 8B)*: Instantaneous, sub-second dialogue analysis with high accuracy.
+  - **Google Gemini** *(Flash / Pro)*: Fast cloud analysis and native multi-speaker TTS.
+  - **Ollama**: 100% private, local LLM analysis (e.g. `qwen2.5`, `llama3.2`).
+  - **Built-in Rule Engine**: Deterministic regex/heuristic fallback requiring zero API keys or external services.
+- **Voice Synthesis Options**:
+  - **Kokoro ONNX**: Free, lightweight offline neural TTS (~140MB INT8 model).
+  - **ElevenLabs**: Premium speech synthesis with automatic rate-limit clamping (429 concurrency prevention) and exponential backoff retry.
+  - **Gemini TTS**: Cloud voices matching your Gemini key.
+- **Full Story Audio Download & Export**: Combine hundreds of rendered dialogue segments with natural inter-speaker pauses into a master 16-bit PCM WAV audiobook via desktop UI or CLI.
+- **Paper Theatre Desktop UI**: Built with Tauri 2, React 19, TypeScript, masked secure API key storage in the OS credential manager, and Web Audio streaming playback.
+
+---
+
+## 🛠️ CLI Quick Reference
+
+Teller can also run entirely as a headless command-line tool:
 
 ```console
-python -m pip install -e ".[cloud]"
-python -m pip install -e ".[local]"
+# 1. Analyze and tag character dialogue
+teller analyze path/to/story.txt
+
+# 2. Synthesize missing speech segments
+teller render path/to/story.txt
+
+# 3. Play through system audio output
+teller play path/to/story.txt
+
+# 4. Export full stitched audio story to a single WAV file
+teller export monkeys-paw-9f742a64 -o my_audiobook.wav
+
+# 5. Check character cast and customize voices
+teller cast stories/my-story-ab12cd34
+teller voices list
+teller voices set stories/my-story-ab12cd34 "Mr. White" am_adam
 ```
 
-## Cloud Setup
+---
 
-Gemini provides structured speaker attribution and TTS using one key:
+## 📦 Requirements & Manual Setup
+
+If you want to run from source or build the application manually:
+
+- **Python**: 3.10 through 3.13
+- **Node.js**: v18+ (for desktop frontend)
+- **Rust**: Latest stable (for Tauri desktop binary)
+- **Audio Output**: Any standard system audio device
+
+### Manual Python Installation
 
 ```console
-teller setup --mode cloud
+# Clone repository
+git clone https://github.com/boldbug1/teller.git
+cd teller
+
+# Create and activate virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install with all providers
+pip install -e ".[all]"
+```
+
+For cloud-only or local-only setups:
+```console
+pip install -e ".[cloud]"   # Gemini, Groq, ElevenLabs
+pip install -e ".[local]"   # Kokoro ONNX, sounddevice
+```
+
+### Provider Configuration
+
+Run the interactive setup assistant or doctor check:
+
+```console
+# Configure providers and keys
+teller setup
+
+# Validate configuration and network connectivity
 teller doctor
-teller run path/to/story.txt
 ```
 
-The setup command stores the key in the operating system credential manager.
-You can instead set `GEMINI_API_KEY` before running Teller.
+API keys are securely persisted in the operating system credential manager (Windows Credential Manager / macOS Keychain / Linux SecretService). You can also provide keys via environment variables:
+- `GROQ_API_KEY`
+- `GEMINI_API_KEY`
+- `ELEVENLABS_API_KEY`
 
-### ElevenLabs TTS (Cloud)
+---
 
-You can pair Gemini (or Ollama) for speaker attribution with ElevenLabs for voice synthesis:
+## 🖥️ Desktop Application Development
+
+Teller's desktop application uses Tauri 2 and React 19:
 
 ```console
-teller setup --mode cloud --tts elevenlabs
-teller doctor
+# 1. Install frontend dependencies
+cd desktop
+npm install
+
+# 2. Run in development mode with hot-reloading
+npm run tauri dev
+
+# 3. Run frontend unit tests
+npm test
+
+# 4. Build self-contained release executable
+npm run build
+npm run tauri build -- --no-bundle
 ```
 
-Or configure `ELEVENLABS_API_KEY` in your environment or credential manager. ElevenLabs BYOK (Bring Your Own Key) incurs API usage on your ElevenLabs account; Teller caches generated audio to avoid duplicate paid requests.
-
-## Local Setup
-
-Install [Ollama](https://ollama.com), then download a capable local model:
-
-```console
-ollama pull qwen3:8b
-teller setup --mode local
-teller doctor
-teller run path/to/story.txt
-```
-
-Local setup downloads checksum-verified Kokoro INT8 and voice assets once
-(about 142 MB). After Ollama and Kokoro models are present, normal operation
-requires no internet connection and no API keys.
-
-## Desktop Application (Paper Theatre)
-
-Teller includes a native desktop application built with Tauri 2, React 19, TypeScript, and the Paper Theatre visual direction. It connects to the Teller Python sidecar over loopback with Bearer token authentication.
-
-### Running Desktop in Development
-
-1. Start the Python sidecar or run from the repo:
-   ```console
-   python -m teller.server --port 8000
-   ```
-
-2. Run the React frontend:
-   ```console
-   cd desktop
-   npm install
-   npm run dev
-   ```
-
-3. (Optional) Run inside the Tauri shell:
-   ```console
-   cd desktop
-   cargo tauri dev
-   ```
-
-### Building the Windows Sidecar
-
-Package the Python engine into a self-contained executable for the Tauri shell:
-
+To recompile the Python engine sidecar:
 ```powershell
 .\scripts\build_sidecar.ps1
 ```
 
-The output executable is placed at `desktop/src-tauri/binaries/teller-sidecar-x86_64-pc-windows-msvc.exe`.
+---
 
-## Commands
+## 📁 Storage Architecture
 
-```console
-teller analyze story.txt
-teller render story.txt
-teller play story.txt
-teller run story.txt
-teller cast stories/my-story-ab12cd34
-teller voices list
-teller voices set stories/my-story-ab12cd34 mira af_heart
-```
-
-Use `--retag` to rerun speaker attribution or `--reassign-voices` to replace
-all saved voice choices. Otherwise Teller never changes an assigned voice.
-
-You can also invoke the source checkout directly after installing dependencies:
-
-```console
-python run.py run story.txt
-```
-
-## Storage
-
-Each imported story is stored under `stories/<title>-<source-hash>/`:
+Every imported story is stored under `stories/<title>-<source-hash>/`:
 
 ```text
-story.txt
-manifest.json
-analysis.json
-characters.json
-segments.json
-audio/<cache-hash>.wav
+story.txt              # Original untouched source text
+manifest.json          # Story metadata and unique ID
+analysis.json          # Character list and dialogue assignments (source of truth)
+characters.json        # Character voice mapping mirror
+segments.json          # Segment timestamps and text mirror
+audio/<cache-hash>.wav # Exact-phrase deterministic WAV audio cache
 ```
 
-The audio hash includes the exact text, provider, model, voice, style, speed,
-language, and cache schema version. A second render or playback makes zero TTS calls and can
-play fully cached stories without provider credentials. `analysis.json` is the
-atomic source of truth; the character and segment files are readable mirrors.
-Speaker attribution is also reused until the source changes or `--retag` is
-requested.
+- **Deterministic Cache**: Audio cache keys hash the exact text, provider, model, voice ID, emotion style, speed, and language.
+- Re-playing or re-rendering never incurs duplicate API charges for identical segments.
 
-Configuration lives in the platform-specific user configuration directory.
-Set `TELLER_CONFIG` to use another TOML file. API keys are never stored inside
-story folders.
+---
 
-## How Attribution Works
+## 📜 Responsible Use & License
 
-Teller splits the source deterministically into immutable narration and quote
-units. The LLM may only assign unit IDs to speakers and update the character
-list; it never rewrites the story. Every response is schema-validated. Invalid
-responses are retried twice, then the affected chunk safely falls back to the
-Narrator voice.
+Generated voices are synthetic. Disclose that fact to listeners where appropriate, and only process stories and voices you have permission to use.
 
-## Development
-
-```console
-python -m pip install -e ".[dev]"
-ruff format --check .
-ruff check .
-mypy src/teller
-pytest
-```
-
-Provider integration tests require their corresponding API or local models;
-the normal test suite uses deterministic fake providers and does not make
-network calls.
-
-## Responsible Use
-
-Generated voices are synthetic. Disclose that fact to listeners where
-appropriate, and only process stories and voices you have permission to use.
-
-Teller is released under the MIT License. Optional models and runtimes retain
-their own licenses.
+Teller is released under the **MIT License**. Optional models and runtimes retain their respective licenses.
