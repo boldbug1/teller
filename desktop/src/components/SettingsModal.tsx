@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { SetupStatus } from "../types";
-import { CheckIcon, SettingsIcon, WarningIcon } from "./Icons";
+import { CheckIcon, EyeIcon, EyeOffIcon, SettingsIcon, WarningIcon } from "./Icons";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -40,6 +40,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [config, setConfig] = useState<any>(null);
   const [geminiKey, setGeminiKey] = useState("");
   const [elevenlabsKey, setElevenlabsKey] = useState("");
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showElevenlabsKey, setShowElevenlabsKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [downloadingKokoro, setDownloadingKokoro] = useState(false);
   const [kokoroProgress, setKokoroProgress] = useState<number | null>(null);
@@ -70,16 +72,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setMsg(null);
     try {
       await api.patchConfig(config);
+      let keySavedCount = 0;
       if (geminiKey.trim()) {
         await api.setSecret("gemini", geminiKey.trim());
-        setGeminiKey("");
+        keySavedCount++;
       }
       if (elevenlabsKey.trim()) {
         await api.setSecret("elevenlabs", elevenlabsKey.trim());
-        setElevenlabsKey("");
+        keySavedCount++;
       }
       onRefreshStatus();
-      setMsg({ text: "Settings saved successfully!", type: "success" });
+      setMsg({
+        text: keySavedCount > 0
+          ? `Settings & ${keySavedCount} API key${keySavedCount > 1 ? "s" : ""} saved successfully!`
+          : "Settings saved successfully!",
+        type: "success",
+      });
     } catch (err: any) {
       setMsg({ text: err.message || "Failed to save settings", type: "error" });
     } finally {
@@ -368,53 +376,112 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        {/* Section 3: API Keys */}
-        <div style={{ marginBottom: "16px" }}>
-          <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>API Keys</h3>
-          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
-            Keys are saved in your system credential manager and never exposed in the browser.
-          </p>
+        {/* Section 3: API Keys (Only shown when a cloud provider is selected) */}
+        {(() => {
+          const needsGeminiKey = config.llm.provider === "gemini" || config.tts.provider === "gemini";
+          const needsElevenlabsKey = config.tts.provider === "elevenlabs";
+          const anyKeyNeeded = needsGeminiKey || needsElevenlabsKey;
 
-          <div style={{ marginBottom: "10px" }}>
-            <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
-              Gemini API Key
-              {setupStatus?.gemini_key_present ? (
-                <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem" }}>
-                  <CheckIcon size={13} /> Stored in Keychain
-                </span>
+          return (
+            <div style={{ marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>API Keys</h3>
+              <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
+                Keys are saved in your system credential manager and never exposed in plain text.
+              </p>
+
+              {!anyKeyNeeded ? (
+                <div
+                  style={{
+                    padding: "10px 14px",
+                    background: "var(--paper-card)",
+                    border: "1.5px dashed var(--ink)",
+                    borderRadius: "3px",
+                    fontSize: "0.85rem",
+                    color: "var(--ink)",
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: "var(--sage)" }}>100% Offline Setup: </span>
+                  Both Story Analysis ({config.llm.provider}) and Voice ({config.tts.provider}) are set to local/offline providers. No cloud API keys required!
+                </div>
               ) : (
-                <span style={{ color: "#777", fontSize: "0.75rem" }}>(Not configured)</span>
-              )}
-            </label>
-            <input
-              type="text"
-              placeholder={setupStatus?.gemini_key_present ? "••••••••••••••••" : "Paste Gemini API Key"}
-              value={geminiKey}
-              onChange={(e) => setGeminiKey(e.target.value)}
-            />
-          </div>
+                <>
+                  {needsGeminiKey && (
+                    <div style={{ marginBottom: "10px" }}>
+                      <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                        <span>Gemini API Key</span>
+                        {setupStatus?.gemini_key_present || geminiKey.trim() ? (
+                          <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem", fontWeight: 600 }}>
+                            <CheckIcon size={13} /> Stored in Keychain
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--rust)", fontSize: "0.75rem", fontWeight: 600 }}>(Key required for Gemini)</span>
+                        )}
+                      </label>
+                      <div className="password-input-wrapper">
+                        <input
+                          type={showGeminiKey ? "text" : "password"}
+                          placeholder={setupStatus?.gemini_key_present ? "•••••••••••••••• (Stored in Keychain)" : "Paste Gemini API Key"}
+                          value={geminiKey}
+                          onChange={(e) => setGeminiKey(e.target.value)}
+                          aria-label="Gemini API Key"
+                          autoComplete="off"
+                          spellCheck="false"
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle-btn"
+                          onClick={() => setShowGeminiKey(!showGeminiKey)}
+                          title={showGeminiKey ? "Hide API key" : "Show API key"}
+                          aria-label={showGeminiKey ? "Hide API key" : "Show API key"}
+                        >
+                          {showGeminiKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
-          <div>
-            <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
-              ElevenLabs API Key
-              {setupStatus?.elevenlabs_key_present ? (
-                <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem" }}>
-                  <CheckIcon size={13} /> Stored in Keychain
-                </span>
-              ) : (
-                <span style={{ color: "#777", fontSize: "0.75rem" }}>(Not configured)</span>
+                  {needsElevenlabsKey && (
+                    <div style={{ marginBottom: "10px" }}>
+                      <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                        <span>ElevenLabs API Key</span>
+                        {setupStatus?.elevenlabs_key_present || elevenlabsKey.trim() ? (
+                          <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem", fontWeight: 600 }}>
+                            <CheckIcon size={13} /> Stored in Keychain
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--rust)", fontSize: "0.75rem", fontWeight: 600 }}>(Key required for ElevenLabs)</span>
+                        )}
+                      </label>
+                      <div className="password-input-wrapper">
+                        <input
+                          type={showElevenlabsKey ? "text" : "password"}
+                          placeholder={setupStatus?.elevenlabs_key_present ? "•••••••••••••••• (Stored in Keychain)" : "Paste ElevenLabs API Key"}
+                          value={elevenlabsKey}
+                          onChange={(e) => setElevenlabsKey(e.target.value)}
+                          aria-label="ElevenLabs API Key"
+                          autoComplete="off"
+                          spellCheck="false"
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle-btn"
+                          onClick={() => setShowElevenlabsKey(!showElevenlabsKey)}
+                          title={showElevenlabsKey ? "Hide API key" : "Show API key"}
+                          aria-label={showElevenlabsKey ? "Hide API key" : "Show API key"}
+                        >
+                          {showElevenlabsKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
-            </label>
-            <input
-              type="text"
-              placeholder={setupStatus?.elevenlabs_key_present ? "••••••••••••••••" : "Paste ElevenLabs API Key"}
-              value={elevenlabsKey}
-              onChange={(e) => setElevenlabsKey(e.target.value)}
-            />
-          </div>
-        </div>
+            </div>
+          );
+        })()}
 
-        {/* Section 4: Kokoro Offline Voice Assets with Live Progress */}
+        {/* Section 4: Kokoro Offline Voice Assets (Only shown when Kokoro is selected) */}
+        {config.tts.provider === "kokoro" && (
         <div
           style={{
             padding: "12px",
@@ -490,6 +557,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
         </div>
+        )}
 
         <div className="modal-actions">
           <button type="button" className="btn-secondary" onClick={onClose} disabled={saving || downloadingKokoro}>

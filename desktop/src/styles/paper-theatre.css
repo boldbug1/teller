@@ -506,16 +506,33 @@ svg {
   width: 100%;
   height: 8px;
   border: 1.5px solid var(--ink);
-  background: var(--paper);
+  background: var(--paper-deep);
   border-radius: 4px;
   position: relative;
   cursor: pointer;
+  overflow: visible;
 }
 
 .scrubber-progress {
   height: 100%;
   background: var(--rust);
   border-radius: 2px;
+  position: relative;
+  transition: width 0.1s linear;
+}
+
+.scrubber-progress::after {
+  content: "";
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 11px;
+  height: 11px;
+  background: var(--ink);
+  border: 1.5px solid var(--paper-card);
+  border-radius: 2px;
+  box-shadow: 1px 1px 0 rgba(33, 29, 25, 0.4);
 }
 
 /* Modals */
@@ -577,8 +594,118 @@ svg {
   box-shadow: 2px 2px 0 var(--ink);
 }
 
+/* Custom Scrollbars (Paper Theatre aesthetic) */
+* {
+  --scrollbar-thumb: #bcae97;
+  --scrollbar-thumb-hover: var(--rust);
+  --scrollbar-track: var(--paper-deep);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--paper-deep);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+  border: 1.5px solid var(--paper-deep);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Custom Range Slider (Paper Theatre aesthetic) */
+input[type="range"] {
+  --slider-track-size: 6px;
+  --slider-thumb-size: 15px;
+  --slider-track-radius: 3px;
+  --slider-thumb-radius: 2px;
+  --slider-track-color: var(--paper-deep);
+  --slider-fill-color: var(--rust);
+  --slider-thumb-color: var(--ink);
+
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--rust);
+  outline-offset: 3px;
+}
+
+/* WebKit/Blink (Tauri webview, Edge, Chrome) */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: var(--slider-track-size);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-track-color);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  margin-top: calc((var(--slider-track-size) - var(--slider-thumb-size)) / 2 - 1px);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-color);
+  box-shadow: 1.5px 1.5px 0 var(--ink);
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:active::-webkit-slider-thumb {
+  background: var(--rust);
+  transform: scale(1.15);
+}
+
+/* Firefox */
+input[type="range"]::-moz-range-track {
+  height: var(--slider-track-size);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-track-color);
+}
+
+input[type="range"]::-moz-range-progress {
+  height: var(--slider-track-size);
+  border-radius: var(--slider-track-radius);
+  background: var(--slider-fill-color);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: var(--slider-thumb-size);
+  height: var(--slider-thumb-size);
+  border: 1.5px solid var(--ink);
+  border-radius: var(--slider-thumb-radius);
+  background: var(--slider-thumb-color);
+  box-shadow: 1.5px 1.5px 0 var(--ink);
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+input[type="range"]:hover::-moz-range-thumb,
+input[type="range"]:active::-moz-range-thumb {
+  background: var(--rust);
+  transform: scale(1.15);
+}
+
 /* Input Fields */
-input[type="text"], textarea, select {
+input[type="text"], input[type="password"], textarea, select {
   width: 100%;
   padding: 8px 12px;
   border: 1.5px solid var(--ink);
@@ -589,7 +716,43 @@ input[type="text"], textarea, select {
   margin-bottom: 12px;
 }
 
-input[type="text"]:focus, textarea:focus, select:focus {
+input[type="text"]:focus, input[type="password"]:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--rust);
+}
+
+/* Password Input Group with show/hide button */
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.password-input-wrapper input {
+  margin-bottom: 0 !important;
+  padding-right: 40px !important;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 5px 7px;
+  color: #555;
+  background: transparent;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.password-toggle-btn:hover {
+  color: var(--ink);
+}
+
+.password-toggle-btn:focus-visible {
   outline: 2px solid var(--rust);
 }
 
