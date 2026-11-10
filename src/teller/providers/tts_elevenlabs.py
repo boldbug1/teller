@@ -213,26 +213,34 @@ class ElevenLabsTTS:
         url = f"{self.base_url}/v1/text-to-speech/{voice_id}?output_format=wav_24000"
 
         try:
-            response = await client.post(url, headers=headers, json=payload)
-            request_id = response.headers.get("request-id") or response.headers.get("x-request-id")
-            req_info = f" (request_id={request_id})" if request_id else ""
+            for attempt in range(4):
+                response = await client.post(url, headers=headers, json=payload)
+                request_id = response.headers.get("request-id") or response.headers.get("x-request-id")
+                req_info = f" (request_id={request_id})" if request_id else ""
 
-            if not response.is_success:
-                try:
-                    error_data = response.json()
-                    detail = _parse_error_detail(error_data)
-                except Exception:
-                    detail = response.text or "Unknown error"
-                raise RuntimeError(
-                    f"ElevenLabs synthesis failed ({response.status_code}): {detail}{req_info}"
-                )
+                if response.status_code == 429:
+                    if attempt < 3:
+                        # Exponential backoff for concurrent request limit / rate limit
+                        await asyncio.sleep(1.5 * (attempt + 1))
+                        continue
 
-            audio_bytes = response.content
-            # Verify WAV header: RIFF....WAVE
-            if len(audio_bytes) < 12 or audio_bytes[:4] != b"RIFF" or audio_bytes[8:12] != b"WAVE":
-                raise RuntimeError(f"ElevenLabs response is not a valid WAV file{req_info}")
+                if not response.is_success:
+                    try:
+                        error_data = response.json()
+                        detail = _parse_error_detail(error_data)
+                    except Exception:
+                        detail = response.text or "Unknown error"
+                    raise RuntimeError(
+                        f"ElevenLabs synthesis failed ({response.status_code}): {detail}{req_info}"
+                    )
 
-            return audio_bytes
+                audio_bytes = response.content
+                # Verify WAV header: RIFF....WAVE
+                if len(audio_bytes) < 12 or audio_bytes[:4] != b"RIFF" or audio_bytes[8:12] != b"WAVE":
+                    raise RuntimeError(f"ElevenLabs response is not a valid WAV file{req_info}")
+
+                return audio_bytes
+            raise RuntimeError("ElevenLabs synthesis failed after 3 rate-limit retries.")
         finally:
             if should_close:
                 await client.aclose()

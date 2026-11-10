@@ -27,7 +27,10 @@ class TellerEngine:
         self.tts = tts
         self.player = player or SoundDevicePlayer()
         self.store = StoryStore(config.paths.stories_dir)
-        self._tts_semaphore = asyncio.Semaphore(config.tts.concurrency)
+        tts_concurrency = config.tts.concurrency
+        if getattr(tts, "provider_id", "") == "elevenlabs" or config.tts.provider == "elevenlabs":
+            tts_concurrency = 1
+        self._tts_semaphore = asyncio.Semaphore(tts_concurrency)
         self._inflight_lock = asyncio.Lock()
         self._inflight: dict[str, asyncio.Task[bytes]] = {}
 

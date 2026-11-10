@@ -336,6 +336,7 @@ def create_app(
                 message_code="downloading_assets",
             )
             try:
+                loop = asyncio.get_running_loop()
 
                 def progress(msg: str) -> None:
                     comp = 0
@@ -346,14 +347,18 @@ def create_app(
                             comp = int(pct * 0.6) if "onnx" in fname else 60 + int(pct * 0.4)
                         except Exception:
                             comp = 0
-                    asyncio.create_task(
-                        operations.update(
-                            op_id,
-                            completed=comp,
-                            total=100,
-                            message_code=msg,
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            operations.update(
+                                op_id,
+                                completed=comp,
+                                total=100,
+                                message_code=msg,
+                            ),
+                            loop,
                         )
-                    )
+                    except Exception:
+                        pass
 
                 await asyncio.to_thread(ensure_kokoro_assets, cfg.paths.assets_dir, progress)
                 await operations.update(

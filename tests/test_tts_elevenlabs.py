@@ -242,6 +242,7 @@ def test_factory_creates_elevenlabs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_factory_raises_when_key_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.setattr("teller.providers.factory.get_api_key", lambda provider, env: None)
     config = AppConfig()
     config.tts.provider = "elevenlabs"
     config.tts.api_key_env = "ELEVENLABS_API_KEY"
