@@ -110,3 +110,16 @@ class OperationEnvelope(BaseModel):
 class OperationStartResponse(BaseModel):
     operation_id: str
     status: str = "started"
+
+
+class StoryExportRequest(BaseModel):
+    target_path: str | None = None
+
+
+class StoryExportResponse(BaseModel):
+    path: str
+    filename: str
+    size_bytes: int
+    duration_seconds: float
+    rendered_segments: int
+

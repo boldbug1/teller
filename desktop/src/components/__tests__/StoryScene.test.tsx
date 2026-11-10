@@ -134,5 +134,46 @@ describe("StoryScene", () => {
     fireEvent.click(screen.getByText(/Dismiss/i));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
+
+  it("renders download button and triggers onDownload when clicked", () => {
+    const onDownload = vi.fn();
+
+    render(
+      <StoryScene
+        story={mockStory}
+        currentSegmentIndex={0}
+        activeOperation={null}
+        onAnalyze={() => {}}
+        onRender={() => {}}
+        onCancelOperation={() => {}}
+        onDownload={onDownload}
+      />
+    );
+
+    const downloadBtn = screen.getByText(/Download Audio/i);
+    expect(downloadBtn).toBeDefined();
+    fireEvent.click(downloadBtn);
+    expect(onDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables download button when no segments are voiced", () => {
+    const storyUnrendered = { ...mockStory, rendered_count: 0 };
+    const onDownload = vi.fn();
+
+    render(
+      <StoryScene
+        story={storyUnrendered}
+        currentSegmentIndex={0}
+        activeOperation={null}
+        onAnalyze={() => {}}
+        onRender={() => {}}
+        onCancelOperation={() => {}}
+        onDownload={onDownload}
+      />
+    );
+
+    const downloadBtn = screen.getByRole("button", { name: /Download Audio/i });
+    expect(downloadBtn.hasAttribute("disabled")).toBe(true);
+  });
 });
 

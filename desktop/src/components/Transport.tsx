@@ -1,5 +1,5 @@
 import React from "react";
-import { NextIcon, PauseIcon, PlayIcon, PrevIcon, VolumeIcon } from "./Icons";
+import { DownloadIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon, VolumeIcon } from "./Icons";
 
 interface TransportProps {
   isPlaying: boolean;
@@ -11,6 +11,8 @@ interface TransportProps {
   onPrev: () => void;
   onNext: () => void;
   onVolumeChange: (vol: number) => void;
+  onDownload?: () => void;
+  downloadDisabled?: boolean;
   disabled?: boolean;
 }
 
@@ -31,6 +33,8 @@ export const Transport: React.FC<TransportProps> = ({
   onPrev,
   onNext,
   onVolumeChange,
+  onDownload,
+  downloadDisabled = false,
   disabled = false,
 }) => {
   const progressRatio = totalDuration > 0 ? Math.min(1, currentTime / totalDuration) : 0;
@@ -82,18 +86,33 @@ export const Transport: React.FC<TransportProps> = ({
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <VolumeIcon size={16} style={{ color: "#555" }} />
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={volume}
-          onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-          style={{ width: "80px", cursor: "pointer", margin: 0 }}
-          aria-label="Volume slider"
-        />
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <VolumeIcon size={16} style={{ color: "#555" }} />
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={volume}
+            onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
+            style={{ width: "80px", cursor: "pointer", margin: 0 }}
+            aria-label="Volume slider"
+          />
+        </div>
+
+        {onDownload && (
+          <button
+            className="transport-btn"
+            onClick={onDownload}
+            disabled={disabled || downloadDisabled}
+            title={downloadDisabled ? "Render voices to download audio" : "Download full story audio (WAV)"}
+            aria-label="Download full story audio"
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <DownloadIcon size={15} />
+          </button>
+        )}
       </div>
     </footer>
   );

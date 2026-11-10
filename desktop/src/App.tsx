@@ -23,6 +23,7 @@ export const App: React.FC = () => {
   // Operations state
   const [activeOperation, setActiveOperation] = useState<OperationEvent | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const pollingRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = () => {
@@ -295,6 +296,63 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleDownloadStoryAudio = async () => {
+    if (!selectedStory || selectedStory.rendered_count === 0) return;
+    const storyId = selectedStory.manifest.story_id;
+    const rawTitle = selectedStory.manifest.title || "story";
+    const safeTitle = rawTitle.replace(/[^\w\s-]/g, "").trim().replace(/[-\s]+/g, "_") || "story";
+    const filename = `${safeTitle}.wav`;
+
+    setIsExporting(true);
+    try {
+      if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+        try {
+          const { save } = await import("@tauri-apps/plugin-dialog");
+          const selectedPath = await save({
+            defaultPath: filename,
+            filters: [
+              {
+                name: "Waveform Audio (*.wav)",
+                extensions: ["wav"],
+              },
+            ],
+          });
+          if (selectedPath && typeof selectedPath === "string") {
+            const result = await api.exportStoryAudio(storyId, selectedPath);
+            alert(`Story audio exported successfully to:\n${result.path}`);
+            return;
+          }
+          if (selectedPath === null) {
+            return;
+          }
+        } catch (dialogErr) {
+          console.warn("Tauri save dialog not available, falling back to direct download", dialogErr);
+        }
+      }
+
+      // Browser download fallback
+      const downloadUrl = api.getStoryDownloadUrl(storyId);
+      const res = await fetch(downloadUrl);
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Download failed: HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
+    } catch (err: any) {
+      setOperationError(`Failed to download audio: ${err.message}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="theatre-shell">
       <Header
@@ -324,6 +382,8 @@ export const App: React.FC = () => {
           onAnalyze={handleAnalyze}
           onRender={handleRender}
           onCancelOperation={handleCancelOperation}
+          onDownload={handleDownloadStoryAudio}
+          isDownloading={isExporting}
         />
 
         {/* Right Cast Rail */}
@@ -346,6 +406,8 @@ export const App: React.FC = () => {
         onPrev={audio.prev}
         onNext={audio.next}
         onVolumeChange={audio.setVolume}
+        onDownload={handleDownloadStoryAudio}
+        downloadDisabled={!selectedStory || selectedStory.rendered_count === 0 || isExporting}
         disabled={!selectedStory || selectedStory.rendered_count === 0}
       />
 

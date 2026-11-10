@@ -311,6 +311,32 @@ class ApiClient {
     if (!res.ok) throw new Error(`Audio segment ${segmentIndex} not available`);
     return res.arrayBuffer();
   }
+
+  public getStoryDownloadUrl(storyId: string): string {
+    return `${this.baseUrl}/v1/stories/${storyId}/download`;
+  }
+
+  public async exportStoryAudio(
+    storyId: string,
+    targetPath?: string
+  ): Promise<{
+    path: string;
+    filename: string;
+    size_bytes: number;
+    duration_seconds: number;
+    rendered_segments: number;
+  }> {
+    const res = await fetch(`${this.baseUrl}/v1/stories/${storyId}/export`, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify({ target_path: targetPath }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to export audio");
+    }
+    return res.json();
+  }
 }
 
 export const api = new ApiClient();

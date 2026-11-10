@@ -420,6 +420,48 @@ def run_story(
 
 
 @app.command()
+def export(
+    source: str = typer.Argument(..., help="Saved story folder or ID"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Target output WAV path"),
+) -> None:
+    """Stitch rendered story audio segments and export a single WAV file."""
+    config = load_config()
+    project = _project(config, source)
+    store = StoryStore(config.paths.stories_dir)
+    analysis = store.load_analysis(project)
+    if analysis is None:
+        raise typer.BadParameter("This story has not been analyzed yet")
+
+    segments, characters = analysis
+    from teller.audio_export import slugify_filename, stitch_story_audio
+
+    try:
+        wav_bytes, duration, count = stitch_story_audio(
+            project,
+            segments,
+            characters,
+            config,
+            speaker_pause_ms=config.playback.speaker_pause_ms,
+        )
+    except ValueError as err:
+        console.print(f"[red]Export failed:[/red] {err}")
+        raise typer.Exit(1) from err
+
+    target = output or (Path.cwd() / slugify_filename(project.manifest.title))
+    if target.is_dir():
+        target = target / slugify_filename(project.manifest.title)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(wav_bytes)
+
+    console.print(
+        f"[green]Exported story audio to {target}[/green] "
+        f"({count} segments, {duration:.1f}s, {len(wav_bytes)/1024/1024:.2f} MB)"
+    )
+
+
+
+@app.command()
 def cast(source: str = typer.Argument(..., help="Saved story folder or ID")) -> None:
     """Show the saved character and voice table."""
     config = load_config()

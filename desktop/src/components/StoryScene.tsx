@@ -1,6 +1,6 @@
 import React from "react";
 import { OperationEvent, Segment, StoryDetail } from "../types";
-import { AnalyzeIcon, MicIcon, WarningIcon } from "./Icons";
+import { AnalyzeIcon, DownloadIcon, MicIcon, WarningIcon } from "./Icons";
 
 interface StorySceneProps {
   story: StoryDetail | null;
@@ -12,6 +12,8 @@ interface StorySceneProps {
   onAnalyze: (force?: boolean) => void;
   onRender: () => void;
   onCancelOperation: () => void;
+  onDownload?: () => void;
+  isDownloading?: boolean;
 }
 
 export const StoryScene: React.FC<StorySceneProps> = ({
@@ -24,6 +26,8 @@ export const StoryScene: React.FC<StorySceneProps> = ({
   onAnalyze,
   onRender,
   onCancelOperation,
+  onDownload,
+  isDownloading = false,
 }) => {
   if (!story) {
     return (
@@ -113,6 +117,29 @@ export const StoryScene: React.FC<StorySceneProps> = ({
                 </>
               )}
             </button>
+            {onDownload && (
+              <button
+                className="btn-secondary"
+                onClick={onDownload}
+                disabled={Boolean(isOpActive || story.rendered_count === 0 || isDownloading)}
+                title={
+                  story.rendered_count > 0
+                    ? "Download full stitched story audio (WAV)"
+                    : "Render voices first to download story audio"
+                }
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                {isDownloading ? (
+                  <>
+                    <span className="spinner-indicator" /> Exporting...
+                  </>
+                ) : (
+                  <>
+                    <DownloadIcon size={16} /> Download Audio
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
 

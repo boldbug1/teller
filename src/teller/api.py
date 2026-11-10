@@ -30,11 +30,14 @@ from teller.api_models import (
     SecretPayload,
     SetupStatusResponse,
     StoryDetailResponse,
+    StoryExportRequest,
+    StoryExportResponse,
     StoryImportRequest,
     StoryPasteRequest,
     StorySummary,
     VoiceItem,
 )
+from teller.audio_export import slugify_filename, stitch_story_audio
 from teller.assets import (
     KOKORO_MODEL_SHA256,
     KOKORO_VOICES_SHA256,
@@ -891,6 +894,108 @@ def create_app(
                 detail="Segment audio not rendered yet",
             )
         return Response(content=audio, media_type="audio/wav")
+
+    @router.get("/v1/stories/{story_id}/download")
+    @router.get("/v1/stories/{story_id}/export/audio")
+    def download_story_audio(
+        story_id: str,
+    ) -> Response:
+        store = get_store()
+        try:
+            project = store.find(story_id)
+        except FileNotFoundError as err:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Story not found"
+            ) from err
+
+        analysis = store.load_analysis(project)
+        if not analysis:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Story not analyzed yet"
+            )
+
+        segments, characters = analysis
+        cfg = get_current_config()
+
+        try:
+            wav_bytes, duration, count = stitch_story_audio(
+                project,
+                segments,
+                characters,
+                cfg,
+                speaker_pause_ms=cfg.playback.speaker_pause_ms,
+            )
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)
+            ) from err
+
+        filename = slugify_filename(project.manifest.title)
+        return Response(
+            content=wav_bytes,
+            media_type="audio/wav",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Length": str(len(wav_bytes)),
+                "X-Audio-Duration": str(duration),
+                "X-Rendered-Segments": str(count),
+            },
+        )
+
+    @router.post("/v1/stories/{story_id}/export", response_model=StoryExportResponse)
+    def export_story_audio(
+        story_id: str,
+        payload: StoryExportRequest | None = None,
+    ) -> StoryExportResponse:
+        store = get_store()
+        try:
+            project = store.find(story_id)
+        except FileNotFoundError as err:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Story not found"
+            ) from err
+
+        analysis = store.load_analysis(project)
+        if not analysis:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Story not analyzed yet"
+            )
+
+        segments, characters = analysis
+        cfg = get_current_config()
+
+        try:
+            wav_bytes, duration, count = stitch_story_audio(
+                project,
+                segments,
+                characters,
+                cfg,
+                speaker_pause_ms=cfg.playback.speaker_pause_ms,
+            )
+        except ValueError as err:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)
+            ) from err
+
+        filename = slugify_filename(project.manifest.title)
+        if payload and payload.target_path:
+            target = Path(payload.target_path)
+            if target.is_dir():
+                target = target / filename
+        else:
+            downloads = Path.home() / "Downloads"
+            target = (downloads if downloads.exists() else project.path) / filename
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(wav_bytes)
+
+        return StoryExportResponse(
+            path=str(target),
+            filename=filename,
+            size_bytes=len(wav_bytes),
+            duration_seconds=duration,
+            rendered_segments=count,
+        )
 
     # -------------------------------------------------------------------------
     # Operations
