@@ -22,6 +22,44 @@ export const App: React.FC = () => {
 
   // Operations state
   const [activeOperation, setActiveOperation] = useState<OperationEvent | null>(null);
+  const [operationError, setOperationError] = useState<string | null>(null);
+  const pollingRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
+  const startPollingOperation = (opId: string) => {
+    stopPolling();
+    pollingRef.current = setInterval(async () => {
+      try {
+        const op = await api.getOperation(opId);
+        if (!op) return;
+        setActiveOperation(op);
+        if (op.state === "completed") {
+          stopPolling();
+          refreshStories();
+          if (selectedStoryId) {
+            refreshCurrentStory(selectedStoryId);
+          }
+          setTimeout(() => {
+            setActiveOperation((curr) => (curr?.operation_id === opId ? null : curr));
+          }, 1800);
+        } else if (op.state === "failed") {
+          stopPolling();
+          setOperationError(op.error || op.message_code || "Operation failed");
+        } else if (op.state === "cancelled") {
+          stopPolling();
+          setActiveOperation(null);
+        }
+      } catch {
+        // Ignore transient poll error
+      }
+    }, 600);
+  };
 
   // Modals state
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -85,17 +123,25 @@ export const App: React.FC = () => {
     const unsubscribe = api.onOperationEvent((event) => {
       setActiveOperation(event);
       if (event.state === "completed") {
+        stopPolling();
         refreshStories();
         if (selectedStoryId) {
           refreshCurrentStory(selectedStoryId);
         }
+        setTimeout(() => {
+          setActiveOperation((curr) => (curr?.operation_id === event.operation_id ? null : curr));
+        }, 1800);
+      } else if (event.state === "failed") {
+        stopPolling();
+        setOperationError(event.error || event.message_code || "Operation failed");
       }
     });
 
     return () => {
+      stopPolling();
       unsubscribe();
     };
-  }, []);
+  }, [selectedStoryId]);
 
   useEffect(() => {
     if (selectedStoryId) {
@@ -107,35 +153,82 @@ export const App: React.FC = () => {
 
   const handleAnalyze = async (force = false) => {
     if (!selectedStoryId) return;
+    setOperationError(null);
+
+    // If Gemini is chosen but no key is stored, guide user straight to Settings
+    if (setupStatus?.llm_provider === "gemini" && !setupStatus.gemini_key_present) {
+      setOperationError("Gemini API key is required for story analysis. Please add your key in Settings.");
+      setIsSettingsOpen(true);
+      return;
+    }
+
     try {
+      setActiveOperation({
+        operation_id: "init",
+        kind: "analyze",
+        state: "running",
+        completed: 0,
+        total: 1,
+        message_code: "Starting analysis...",
+      });
       const res = await api.analyzeStory(selectedStoryId, force);
       setActiveOperation({
         operation_id: res.operation_id,
         kind: "analyze",
-        state: "pending",
+        state: "running",
         completed: 0,
         total: 1,
-        message_code: "analysis_queued",
+        message_code: "Analyzing story chunks with AI...",
       });
+      startPollingOperation(res.operation_id);
     } catch (err: any) {
-      alert(`Analysis failed to start: ${err.message}`);
+      setActiveOperation(null);
+      const errMsg = err.message || "Failed to start analysis";
+      setOperationError(errMsg);
+      if (errMsg.includes("Settings") || errMsg.includes("API key") || errMsg.includes("key not found")) {
+        setIsSettingsOpen(true);
+      }
     }
   };
 
   const handleRender = async () => {
     if (!selectedStoryId) return;
+    setOperationError(null);
+
+    // Pre-flight checks for TTS provider
+    if (setupStatus?.tts_provider === "elevenlabs" && !setupStatus.elevenlabs_key_present) {
+      setOperationError("ElevenLabs API key is required to render voices. Please add your key in Settings.");
+      setIsSettingsOpen(true);
+      return;
+    }
+    if (setupStatus?.tts_provider === "kokoro" && (!setupStatus.kokoro_model_present || !setupStatus.kokoro_voices_present)) {
+      setOperationError("Kokoro voice assets must be downloaded first. Please open Settings to download offline assets.");
+      setIsSettingsOpen(true);
+      return;
+    }
+
     try {
+      setActiveOperation({
+        operation_id: "init",
+        kind: "render",
+        state: "running",
+        completed: 0,
+        total: selectedStory?.segments.length || 1,
+        message_code: "Starting voice synthesis...",
+      });
       const res = await api.renderStory(selectedStoryId);
       setActiveOperation({
         operation_id: res.operation_id,
         kind: "render",
-        state: "pending",
+        state: "running",
         completed: 0,
         total: selectedStory?.segments.length || 1,
-        message_code: "render_queued",
+        message_code: "Rendering character lines...",
       });
+      startPollingOperation(res.operation_id);
     } catch (err: any) {
-      alert(`Rendering failed to start: ${err.message}`);
+      setActiveOperation(null);
+      setOperationError(err.message || "Failed to start voice rendering");
     }
   };
 
@@ -149,20 +242,26 @@ export const App: React.FC = () => {
         state: "pending",
         completed: 0,
         total: selectedStory?.characters.length || 1,
-        message_code: "reassigning_queued",
+        message_code: "Reassigning cast voices...",
       });
+      startPollingOperation(res.operation_id);
     } catch (err: any) {
-      alert(`Voice reassignment failed to start: ${err.message}`);
+      setOperationError(`Voice reassignment failed: ${err.message}`);
     }
   };
 
   const handleCancelOperation = async () => {
     if (!activeOperation) return;
+    const opId = activeOperation.operation_id;
+    stopPolling();
     try {
-      await api.cancelOperation(activeOperation.operation_id);
+      if (opId !== "init") {
+        await api.cancelOperation(opId);
+      }
       setActiveOperation(null);
     } catch (err: any) {
       console.warn("Cancel failed", err);
+      setActiveOperation(null);
     }
   };
 
@@ -214,6 +313,9 @@ export const App: React.FC = () => {
           story={selectedStory}
           currentSegmentIndex={audio.currentSegmentIndex}
           activeOperation={activeOperation}
+          operationError={operationError}
+          onDismissError={() => setOperationError(null)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
           onAnalyze={handleAnalyze}
           onRender={handleRender}
           onCancelOperation={handleCancelOperation}

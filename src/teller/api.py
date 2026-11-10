@@ -558,11 +558,23 @@ def create_app(
             return OperationStartResponse(operation_id=op_id)
 
         cfg = get_current_config()
+        try:
+            llm = create_llm(cfg)
+        except Exception as err:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(err),
+            ) from err
 
         async def _run_analysis() -> None:
-            await operations.update(op_id, state="running", message_code="analysis_started")
+            await operations.update(
+                op_id,
+                state="running",
+                completed=0,
+                total=1,
+                message_code="Starting story analysis...",
+            )
             try:
-                llm = create_llm(cfg)
                 engine = TellerEngine(cfg, llm=llm)
 
                 def progress_cb(comp: int, tot: int, code: str) -> None:
@@ -584,15 +596,15 @@ def create_app(
                     state="completed",
                     completed=len(segments),
                     total=len(segments),
-                    message_code="analysis_completed",
+                    message_code="Analysis complete!",
                 )
             except asyncio.CancelledError:
                 await operations.update(
-                    op_id, state="cancelled", message_code="operation_cancelled"
+                    op_id, state="cancelled", message_code="Analysis cancelled"
                 )
             except Exception as e:
                 await operations.update(
-                    op_id, state="failed", error=str(e), message_code="analysis_failed"
+                    op_id, state="failed", error=str(e), message_code=f"Analysis failed: {e}"
                 )
 
         task = asyncio.create_task(_run_analysis())

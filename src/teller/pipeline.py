@@ -59,7 +59,11 @@ class TellerEngine:
         prior_characters = existing[1] if existing else None
         if is_cancelled and is_cancelled():
             raise asyncio.CancelledError()
-        segments, characters = await tagger.tag(source, prior_characters)
+        segments, characters = await tagger.tag(
+            source,
+            prior_characters,
+            progress_callback=progress_callback,
+        )
         if is_cancelled and is_cancelled():
             raise asyncio.CancelledError()
         self.store.save_analysis(project, segments, characters)

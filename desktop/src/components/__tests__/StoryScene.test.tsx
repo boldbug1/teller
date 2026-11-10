@@ -108,5 +108,31 @@ describe("StoryScene", () => {
     fireEvent.click(screen.getByText("Cancel"));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it("displays operation error banner with open settings and dismiss button", () => {
+    const onDismiss = vi.fn();
+    const onOpenSettings = vi.fn();
+
+    render(
+      <StoryScene
+        story={mockStory}
+        currentSegmentIndex={0}
+        activeOperation={null}
+        operationError="Gemini API key is required"
+        onDismissError={onDismiss}
+        onOpenSettings={onOpenSettings}
+        onAnalyze={() => {}}
+        onRender={() => {}}
+        onCancelOperation={() => {}}
+      />
+    );
+
+    expect(screen.getByText(/Gemini API key is required/i)).toBeDefined();
+    fireEvent.click(screen.getByText("Open Settings"));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText(/Dismiss/i));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
 });
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from pydantic import ValidationError
 
@@ -153,13 +153,17 @@ class StoryTagger:
         self,
         source_text: str,
         characters: list[Character] | None = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> tuple[list[Segment], list[Character]]:
         units = split_story(source_text)
         chunks = make_chunks(units, max_chars=self.max_chunk_chars)
+        total_chunks = len(chunks)
         registry = CharacterRegistry(characters)
         speakers: dict[str, tuple[str, str | None]] = {}
 
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
+            if progress_callback:
+                progress_callback(i, total_chunks, f"Analyzing chunk {i + 1} of {total_chunks}")
             result = await self._tag_chunk(chunk, registry)
             if result is None:
                 for unit in chunk.units:
@@ -172,5 +176,8 @@ class StoryTagger:
                 speaker_id = references.get(assignment.speaker_ref, assignment.speaker_ref)
                 speakers[assignment.unit_id] = (speaker_id, assignment.emotion)
                 registry.mark_seen(speaker_id, chunk.index)
+
+        if progress_callback:
+            progress_callback(total_chunks, total_chunks, "Finalizing character assignments")
 
         return build_segments(source_text, units, speakers), registry.all()

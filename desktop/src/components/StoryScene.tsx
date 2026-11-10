@@ -1,11 +1,14 @@
 import React from "react";
 import { OperationEvent, Segment, StoryDetail } from "../types";
-import { AnalyzeIcon, MicIcon } from "./Icons";
+import { AnalyzeIcon, MicIcon, WarningIcon } from "./Icons";
 
 interface StorySceneProps {
   story: StoryDetail | null;
   currentSegmentIndex: number;
   activeOperation: OperationEvent | null;
+  operationError?: string | null;
+  onDismissError?: () => void;
+  onOpenSettings?: () => void;
   onAnalyze: (force?: boolean) => void;
   onRender: () => void;
   onCancelOperation: () => void;
@@ -15,6 +18,9 @@ export const StoryScene: React.FC<StorySceneProps> = ({
   story,
   currentSegmentIndex,
   activeOperation,
+  operationError,
+  onDismissError,
+  onOpenSettings,
   onAnalyze,
   onRender,
   onCancelOperation,
@@ -80,7 +86,15 @@ export const StoryScene: React.FC<StorySceneProps> = ({
               title="Tag characters, dialogue, and emotion"
               style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
             >
-              <AnalyzeIcon size={16} /> {story.segments.length > 0 ? "Re-Analyze" : "Analyze Story"}
+              {isOpActive && activeOperation?.kind === "analyze" ? (
+                <>
+                  <span className="spinner-indicator" /> Analyzing Story...
+                </>
+              ) : (
+                <>
+                  <AnalyzeIcon size={16} /> {story.segments.length > 0 ? "Re-Analyze" : "Analyze Story"}
+                </>
+              )}
             </button>
             <button
               className="btn-primary"
@@ -89,7 +103,15 @@ export const StoryScene: React.FC<StorySceneProps> = ({
               title="Synthesize all dialogue into audio"
               style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
             >
-              <MicIcon size={16} /> Render Voices
+              {isOpActive && activeOperation?.kind === "render" ? (
+                <>
+                  <span className="spinner-indicator" style={{ borderTopColor: "#fff" }} /> Rendering Voices...
+                </>
+              ) : (
+                <>
+                  <MicIcon size={16} /> Render Voices
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -97,14 +119,28 @@ export const StoryScene: React.FC<StorySceneProps> = ({
         {/* Operation Progress Banner */}
         {isOpActive && (
           <div className="operation-banner" role="status">
-            <span style={{ fontWeight: "bold", fontSize: "0.85rem", textTransform: "capitalize" }}>
-              {activeOperation?.kind}: {activeOperation?.message_code.replace(/_/g, " ")}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: "220px" }}>
+              <span className="spinner-indicator" />
+              <span style={{ fontWeight: "bold", fontSize: "0.85rem", textTransform: "capitalize" }}>
+                {activeOperation?.kind === "analyze" ? "Analyzing" : activeOperation?.kind}:
+              </span>
+              <span style={{ fontSize: "0.85rem" }}>
+                {activeOperation?.message_code ? activeOperation.message_code.replace(/_/g, " ") : "Processing..."}
+              </span>
+            </div>
             <div className="progress-bar-container">
-              <div className="progress-fill" style={{ width: `${progressPercent}%` }} />
+              <div
+                className="progress-fill"
+                style={{
+                  width: `${progressPercent > 0 ? progressPercent : 15}%`,
+                  transition: "width 0.3s ease",
+                }}
+              />
             </div>
             <span style={{ fontSize: "0.85rem", fontWeight: "bold", minWidth: "45px" }}>
-              {activeOperation?.completed}/{activeOperation?.total}
+              {activeOperation && activeOperation.total > 0
+                ? `${activeOperation.completed}/${activeOperation.total}`
+                : "..."}
             </span>
             <button
               className="btn-secondary"
@@ -113,6 +149,40 @@ export const StoryScene: React.FC<StorySceneProps> = ({
             >
               Cancel
             </button>
+          </div>
+        )}
+
+        {/* Operation Error Banner */}
+        {operationError && (
+          <div className="operation-error-banner" role="alert">
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <WarningIcon size={18} style={{ color: "#721c24", flexShrink: 0 }} />
+              <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                {operationError}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: "4px 10px", fontSize: "0.8rem", background: "#fff" }}
+                  onClick={onOpenSettings}
+                >
+                  Open Settings
+                </button>
+              )}
+              {onDismissError && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: "4px 8px", fontSize: "0.8rem", background: "#fff" }}
+                  onClick={onDismissError}
+                >
+                  ✕ Dismiss
+                </button>
+              )}
+            </div>
           </div>
         )}
 
