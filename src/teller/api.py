@@ -231,7 +231,31 @@ def create_app(
         )
 
         # LLM Provider
-        if cfg.llm.provider == "gemini":
+        if cfg.llm.provider == "groq":
+            present = bool(get_api_key("groq", "GROQ_API_KEY"))
+            checks.append(
+                DoctorCheckItem(
+                    name="Groq API key",
+                    passed=present,
+                    details="GROQ_API_KEY",
+                )
+            )
+            try:
+                create_llm(cfg)
+                checks.append(
+                    DoctorCheckItem(name="Groq Provider", passed=True, details=f"model: {cfg.llm.model}")
+                )
+            except Exception as e:
+                checks.append(DoctorCheckItem(name="Groq Provider", passed=False, details=str(e)))
+        elif cfg.llm.provider in ("rule_based", "heuristic", "offline"):
+            checks.append(
+                DoctorCheckItem(
+                    name="Rule-Based Engine",
+                    passed=True,
+                    details="100% offline & instant",
+                )
+            )
+        elif cfg.llm.provider == "gemini":
             present = bool(get_api_key("gemini", cfg.llm.api_key_env))
             checks.append(
                 DoctorCheckItem(
