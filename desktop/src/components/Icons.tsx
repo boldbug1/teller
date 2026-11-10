@@ -240,3 +240,43 @@ export const CheckIcon: React.FC<IconProps> = ({ size = 16, style, className }) 
     <polyline points="20 6 9 17 4 12" />
   </svg>
 );
+
+export const UploadCloudIcon: React.FC<IconProps> = ({ size = 20, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" />
+    <path d="M12 12v9" />
+    <path d="m8 16 4-4 4 4" />
+  </svg>
+);
+
+export const FileIcon: React.FC<IconProps> = ({ size = 18, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+    <polyline points="14 2 14 8 20 8" />
+  </svg>
+);
+

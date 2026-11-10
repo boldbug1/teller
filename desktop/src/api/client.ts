@@ -194,6 +194,27 @@ class ApiClient {
     return res.json();
   }
 
+  public async uploadStoryFile(
+    file: { name: string; base64?: string; path?: string },
+    title?: string
+  ): Promise<StorySummary> {
+    const res = await fetch(`${this.baseUrl}/v1/stories/import`, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify({
+        path: file.path,
+        content_base64: file.base64,
+        filename: file.name,
+        title: title || undefined,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "Upload failed");
+    }
+    return res.json();
+  }
+
   public async pasteStory(text: string, title?: string): Promise<StorySummary> {
     const res = await fetch(`${this.baseUrl}/v1/stories/paste`, {
       method: "POST",

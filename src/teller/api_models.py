@@ -69,7 +69,9 @@ class StoryDetailResponse(BaseModel):
 
 
 class StoryImportRequest(BaseModel):
-    path: str
+    path: str | None = None
+    content_base64: str | None = None
+    filename: str | None = None
     title: str | None = None
 
 

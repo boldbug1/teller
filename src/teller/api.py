@@ -44,6 +44,12 @@ from teller.assets import (
 )
 from teller.cache import AudioCache, audio_cache_key
 from teller.config import AppConfig, default_config_path, load_config, save_config
+from teller.document import (
+    extract_docx_text,
+    extract_pdf_text,
+    extract_story_title,
+    extract_text_from_file,
+)
 from teller.models import VoiceAssignment
 from teller.operations import operations
 from teller.pipeline import TellerEngine
@@ -396,28 +402,63 @@ def create_app(
 
     @router.post("/v1/stories/import", response_model=StorySummary)
     def import_story(payload: StoryImportRequest) -> StorySummary:
-        path = Path(payload.path).expanduser().resolve()
-        if not path.exists() or not path.is_file():
+        text: str = ""
+        filename_hint: str | None = payload.filename
+
+        if payload.path:
+            path = Path(payload.path).expanduser().resolve()
+            if not path.exists() or not path.is_file():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Import file does not exist: {payload.path}",
+                )
+            filename_hint = filename_hint or path.name
+            try:
+                text = extract_text_from_file(path)
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to read file: {e}",
+                ) from e
+        elif payload.content_base64:
+            import base64
+
+            try:
+                data = base64.b64decode(payload.content_base64)
+                ext = Path(payload.filename or "").suffix.lower()
+                if ext == ".docx":
+                    text = extract_docx_text(data)
+                elif ext == ".pdf":
+                    text = extract_pdf_text(data)
+                else:
+                    try:
+                        text = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text = data.decode("latin-1")
+            except Exception as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Failed to process uploaded file: {e}",
+                ) from e
+        else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Import file does not exist: {payload.path}",
+                detail="Either file path or file content must be provided",
             )
-        try:
-            text = path.read_text(encoding="utf-8")
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to read file: {e}",
-            ) from e
+
         if not text.strip():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Story file is empty",
+                detail="Story content is empty",
             )
 
         store = get_store()
-        title = payload.title or path.stem
-        project = store.open_or_create(text, title, source_name=path.name)
+        title = (
+            payload.title.strip()
+            if payload.title and payload.title.strip()
+            else extract_story_title(text, filename_hint)
+        )
+        project = store.open_or_create(text, title, source_name=filename_hint)
         return StorySummary(
             story_id=project.manifest.story_id,
             title=project.manifest.title,
@@ -438,7 +479,11 @@ def create_app(
                 detail="Pasted text cannot be empty",
             )
         store = get_store()
-        title = payload.title.strip() if payload.title and payload.title.strip() else "Untitled"
+        title = (
+            payload.title.strip()
+            if payload.title and payload.title.strip()
+            else extract_story_title(text)
+        )
         project = store.open_or_create(text, title, source_name=None)
         return StorySummary(
             story_id=project.manifest.story_id,

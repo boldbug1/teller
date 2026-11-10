@@ -166,7 +166,7 @@ def test_story_import_validation(
     )
     assert res_empty.status_code == 400
 
-    # Import valid file
+    # Import valid file with explicit title
     valid_file = tmp_path / "valid.txt"
     valid_file.write_text("Once upon a time in a distant land.", encoding="utf-8")
     res_valid = client.post(
@@ -176,6 +176,26 @@ def test_story_import_validation(
     )
     assert res_valid.status_code == 200
     assert res_valid.json()["title"] == "Distant Land"
+
+    # Auto title extraction from markdown header without user title
+    md_file = tmp_path / "story_with_header.md"
+    md_file.write_text("# The Whispering Woods\n\nThe trees seemed alive.", encoding="utf-8")
+    res_auto = client.post(
+        "/v1/stories/import",
+        json={"path": str(md_file)},
+        headers=auth,
+    )
+    assert res_auto.status_code == 200
+    assert res_auto.json()["title"] == "The Whispering Woods"
+
+    # Auto title extraction from pasted text without user title
+    res_paste = client.post(
+        "/v1/stories/paste",
+        json={"text": "A Midnight Encounter\n\nIt was a dark stormy night."},
+        headers=auth,
+    )
+    assert res_paste.status_code == 200
+    assert res_paste.json()["title"] == "A Midnight Encounter"
 
 
 def test_secrets_and_config_endpoints(test_env: tuple[AppConfig, str, TestClient]) -> None:
