@@ -18,6 +18,25 @@ def create_llm(config: AppConfig) -> LLMProvider | None:
                 f"Gemini API key not found. Set {config.llm.api_key_env} or run: teller setup"
             )
         return GeminiLLM(api_key, config.llm.model)
+    if config.llm.provider == "groq":
+        from teller.providers.llm_groq import GroqLLM
+
+        env_var = (
+            config.llm.api_key_env
+            if config.llm.api_key_env and config.llm.api_key_env != "GEMINI_API_KEY"
+            else "GROQ_API_KEY"
+        )
+        api_key = get_api_key("groq", env_var)
+        if not api_key:
+            raise RuntimeError(
+                f"Groq API key not found. Set {env_var} or configure it in Settings."
+            )
+        model = (
+            config.llm.model
+            if config.llm.model and config.llm.model != "gemini-3.8-flash"
+            else "llama-3.3-70b-versatile"
+        )
+        return GroqLLM(api_key, model)
     if config.llm.provider == "ollama":
         from teller.providers.llm_ollama import OllamaLLM
 

@@ -16,6 +16,7 @@ class SetupStatusResponse(BaseModel):
     llm_provider: str
     tts_provider: str
     gemini_key_present: bool
+    groq_key_present: bool = False
     elevenlabs_key_present: bool
     ollama_reachable: bool
     ollama_models: list[str] = Field(default_factory=list)

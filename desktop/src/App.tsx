@@ -155,9 +155,14 @@ export const App: React.FC = () => {
     if (!selectedStoryId) return;
     setOperationError(null);
 
-    // If Gemini is chosen but no key is stored, guide user straight to Settings
+    // If Gemini or Groq is chosen but no key is stored, guide user straight to Settings
     if (setupStatus?.llm_provider === "gemini" && !setupStatus.gemini_key_present) {
       setOperationError("Gemini API key is required for story analysis. Please add your key in Settings.");
+      setIsSettingsOpen(true);
+      return;
+    }
+    if (setupStatus?.llm_provider === "groq" && !setupStatus.groq_key_present) {
+      setOperationError("Groq API key is required for story analysis. Please add your key in Settings.");
       setIsSettingsOpen(true);
       return;
     }

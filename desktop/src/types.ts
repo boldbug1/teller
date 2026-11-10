@@ -61,6 +61,7 @@ export interface SetupStatus {
   llm_provider: string;
   tts_provider: string;
   gemini_key_present: boolean;
+  groq_key_present?: boolean;
   elevenlabs_key_present: boolean;
   ollama_reachable: boolean;
   ollama_models: string[];

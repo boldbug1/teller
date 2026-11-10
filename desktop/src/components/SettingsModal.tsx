@@ -16,6 +16,12 @@ const GEMINI_LLM_MODELS = [
   { value: "gemini-2.5-pro", label: "gemini-2.5-pro (In-depth analysis)" },
 ];
 
+const GROQ_LLM_MODELS = [
+  { value: "llama-3.3-70b-versatile", label: "llama-3.3-70b-versatile (Recommended - High Quality & Fast)" },
+  { value: "llama-3.1-8b-instant", label: "llama-3.1-8b-instant (Ultra Fast - Lightweight)" },
+  { value: "mixtral-8x7b-32768", label: "mixtral-8x7b-32768 (32k Context Window)" },
+];
+
 const OLLAMA_DEFAULT_MODELS = [
   "llama3.2",
   "mistral",
@@ -39,8 +45,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [config, setConfig] = useState<any>(null);
   const [geminiKey, setGeminiKey] = useState("");
+  const [groqKey, setGroqKey] = useState("");
   const [elevenlabsKey, setElevenlabsKey] = useState("");
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showGroqKey, setShowGroqKey] = useState(false);
   const [showElevenlabsKey, setShowElevenlabsKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [downloadingKokoro, setDownloadingKokoro] = useState(false);
@@ -75,6 +83,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       let keySavedCount = 0;
       if (geminiKey.trim()) {
         await api.setSecret("gemini", geminiKey.trim());
+        keySavedCount++;
+      }
+      if (groqKey.trim()) {
+        await api.setSecret("groq", groqKey.trim());
         keySavedCount++;
       }
       if (elevenlabsKey.trim()) {
@@ -181,7 +193,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 value={config.llm.provider}
                 onChange={(e) => {
                   const prov = e.target.value;
-                  const defModel = prov === "gemini" ? "gemini-3.8-flash" : prov === "rule_based" ? "builtin" : (setupStatus?.ollama_models?.[0] || "llama3.2");
+                  const defModel = prov === "gemini" ? "gemini-3.8-flash" : prov === "groq" ? "llama-3.3-70b-versatile" : prov === "rule_based" ? "builtin" : (setupStatus?.ollama_models?.[0] || "llama3.2");
                   setCustomLlmModel(false);
                   setConfig({
                     ...config,
@@ -190,6 +202,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 }}
               >
                 <option value="gemini">Gemini (Cloud AI)</option>
+                <option value="groq">Groq (Ultra-Fast Cloud AI - Free Tier)</option>
                 <option value="rule_based">Rule-Based / Instant (100% Offline & Free)</option>
                 <option value="ollama">Ollama (Local AI / Offline)</option>
               </select>
@@ -201,6 +214,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <select disabled value="builtin">
                   <option value="builtin">Built-in Dialogue & Cast Parser</option>
                 </select>
+              ) : config.llm.provider === "groq" ? (
+                <>
+                  <select
+                    value={customLlmModel ? "custom" : config.llm.model}
+                    onChange={(e) => {
+                      if (e.target.value === "custom") {
+                        setCustomLlmModel(true);
+                      } else {
+                        setCustomLlmModel(false);
+                        setConfig({
+                          ...config,
+                          llm: { ...config.llm, model: e.target.value },
+                        });
+                      }
+                    }}
+                  >
+                    {GROQ_LLM_MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                    <option value="custom">Custom model name...</option>
+                  </select>
+                  {customLlmModel && (
+                    <input
+                      type="text"
+                      placeholder="Enter Groq model name (e.g. llama-3.3-70b-versatile)"
+                      value={config.llm.model}
+                      style={{ marginTop: "6px" }}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          llm: { ...config.llm, model: e.target.value },
+                        })
+                      }
+                    />
+                  )}
+                </>
               ) : config.llm.provider === "gemini" ? (
                 <>
                   <select
@@ -384,8 +435,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Section 3: API Keys (Only shown when a cloud provider is selected) */}
         {(() => {
           const needsGeminiKey = config.llm.provider === "gemini" || config.tts.provider === "gemini";
+          const needsGroqKey = config.llm.provider === "groq";
           const needsElevenlabsKey = config.tts.provider === "elevenlabs";
-          const anyKeyNeeded = needsGeminiKey || needsElevenlabsKey;
+          const anyKeyNeeded = needsGeminiKey || needsGroqKey || needsElevenlabsKey;
 
           return (
             <div style={{ marginBottom: "16px" }}>
@@ -440,6 +492,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           aria-label={showGeminiKey ? "Hide API key" : "Show API key"}
                         >
                           {showGeminiKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {needsGroqKey && (
+                    <div style={{ marginBottom: "10px" }}>
+                      <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+                        <span>Groq API Key</span>
+                        {setupStatus?.groq_key_present || groqKey.trim() ? (
+                          <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem", fontWeight: 600 }}>
+                            <CheckIcon size={13} /> Stored in Keychain
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--rust)", fontSize: "0.75rem", fontWeight: 600 }}>(Key required for Groq)</span>
+                        )}
+                      </label>
+                      <div className="password-input-wrapper">
+                        <input
+                          type={showGroqKey ? "text" : "password"}
+                          placeholder={setupStatus?.groq_key_present ? "•••••••••••••••• (Stored in Keychain)" : "Paste Groq API Key (gsk_...)"}
+                          value={groqKey}
+                          onChange={(e) => setGroqKey(e.target.value)}
+                          aria-label="Groq API Key"
+                          autoComplete="off"
+                          spellCheck="false"
+                        />
+                        <button
+                          type="button"
+                          className="password-toggle-btn"
+                          onClick={() => setShowGroqKey(!showGroqKey)}
+                          title={showGroqKey ? "Hide API key" : "Show API key"}
+                          aria-label={showGroqKey ? "Hide API key" : "Show API key"}
+                        >
+                          {showGroqKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
                         </button>
                       </div>
                     </div>

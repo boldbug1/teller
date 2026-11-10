@@ -122,6 +122,7 @@ def create_app(
         cfg = get_current_config()
 
         gemini_key = bool(get_api_key("gemini", "GEMINI_API_KEY"))
+        groq_key = bool(get_api_key("groq", "GROQ_API_KEY"))
         elevenlabs_key = bool(get_api_key("elevenlabs", "ELEVENLABS_API_KEY"))
 
         ollama_reachable = False
@@ -149,8 +150,11 @@ def create_app(
         except Exception:
             audio_output_ok = True
 
-        llm_ready = (cfg.llm.provider == "gemini" and gemini_key) or (
-            cfg.llm.provider == "ollama" and ollama_reachable and ollama_model_available
+        llm_ready = (
+            (cfg.llm.provider in ("rule_based", "heuristic", "offline"))
+            or (cfg.llm.provider == "gemini" and gemini_key)
+            or (cfg.llm.provider == "groq" and groq_key)
+            or (cfg.llm.provider == "ollama" and ollama_reachable and ollama_model_available)
         )
         tts_ready = (
             (cfg.tts.provider == "gemini" and gemini_key)
@@ -162,6 +166,7 @@ def create_app(
             llm_provider=cfg.llm.provider,
             tts_provider=cfg.tts.provider,
             gemini_key_present=gemini_key,
+            groq_key_present=groq_key,
             elevenlabs_key_present=elevenlabs_key,
             ollama_reachable=ollama_reachable,
             ollama_models=ollama_models,
