@@ -29,7 +29,7 @@ class GeminiLLM:
             input=prompt,
             response_format=response_format,
         )
-        output = interaction.output_text
+        output = getattr(interaction, "output_text", None)
         if not output:
             raise RuntimeError("Gemini returned no text")
         return cast(str, output)

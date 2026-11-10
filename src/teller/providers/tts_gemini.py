@@ -74,7 +74,7 @@ class GeminiTTS:
             response_format={"type": "audio", "mime_type": "audio/wav"},
             generation_config={"speech_config": [{"voice": voice_id}]},
         )
-        output = interaction.output_audio
+        output = getattr(interaction, "output_audio", None)
         if output is None or not output.data:
             raise RuntimeError("Gemini returned no audio")
         return base64.b64decode(output.data)

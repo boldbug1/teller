@@ -32,7 +32,7 @@ class OllamaLLM:
         content = response.message.content
         if not content:
             raise RuntimeError("Ollama returned no text")
-        return cast(str, content)
+        return content
 
     async def generate(self, prompt: str, schema: dict[str, Any] | None = None) -> str:
         return await asyncio.to_thread(self._generate, prompt, schema)

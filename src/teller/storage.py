@@ -150,3 +150,38 @@ class StoryStore:
             raise FileNotFoundError(f"No Teller story found at {path}")
         manifest = StoryManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
         return StoryProject(path=manifest_path.parent, manifest=manifest)
+
+    def list_stories(self) -> list[StoryProject]:
+        if not self.root.exists():
+            return []
+        projects: list[StoryProject] = []
+        for child in self.root.iterdir():
+            if not child.is_dir():
+                continue
+            manifest_path = child / "manifest.json"
+            if not manifest_path.is_file():
+                continue
+            try:
+                manifest = StoryManifest.model_validate_json(
+                    manifest_path.read_text(encoding="utf-8")
+                )
+                projects.append(StoryProject(path=child, manifest=manifest))
+            except Exception:
+                # Isolate malformed projects so they don't break the entire listing
+                continue
+        # Deterministic ordering: by created_at descending, then title, then story_id
+        projects.sort(
+            key=lambda p: (p.manifest.created_at, p.manifest.title, p.manifest.story_id),
+            reverse=True,
+        )
+        return projects
+
+    def delete_story(self, story: str | Path) -> bool:
+        project = self.find(story)
+        resolved_path = project.path.resolve()
+        if resolved_path == self.root or self.root not in resolved_path.parents:
+            raise ValueError(f"Story path {resolved_path} is outside the story root {self.root}")
+        import shutil
+
+        shutil.rmtree(resolved_path)
+        return True

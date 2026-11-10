@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 
 from teller.cache import AudioCache, audio_cache_key
 from teller.config import AppConfig
@@ -35,12 +36,20 @@ class TellerEngine:
         project: StoryProject,
         *,
         force: bool = False,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> tuple[list[Segment], list[Character]]:
+        if is_cancelled and is_cancelled():
+            raise asyncio.CancelledError()
         existing = self.store.load_analysis(project)
         if existing is not None and not force:
+            if progress_callback:
+                progress_callback(1, 1, "analysis_loaded")
             return existing
         if self.llm is None:
             raise RuntimeError("This story needs analysis, but no LLM provider is configured")
+        if progress_callback:
+            progress_callback(0, 1, "starting_analysis")
         tagger = StoryTagger(
             self.llm,
             max_chunk_chars=self.config.llm.max_chunk_chars,
@@ -48,8 +57,14 @@ class TellerEngine:
         )
         source = self.store.story_text(project)
         prior_characters = existing[1] if existing else None
+        if is_cancelled and is_cancelled():
+            raise asyncio.CancelledError()
         segments, characters = await tagger.tag(source, prior_characters)
+        if is_cancelled and is_cancelled():
+            raise asyncio.CancelledError()
         self.store.save_analysis(project, segments, characters)
+        if progress_callback:
+            progress_callback(1, 1, "analysis_complete")
         return segments, characters
 
     async def prepare_voices(
@@ -59,16 +74,28 @@ class TellerEngine:
         characters: list[Character],
         *,
         force: bool = False,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> list[Character]:
+        if is_cancelled and is_cancelled():
+            raise asyncio.CancelledError()
         if not force and all(character.voice is not None for character in characters):
             if self.tts is None:
                 return characters
             await assign_voices(characters, self.tts)
+            if progress_callback:
+                progress_callback(len(characters), len(characters), "voices_ready")
             return characters
         if self.tts is None:
             raise RuntimeError("No TTS provider is configured")
+        if progress_callback:
+            progress_callback(0, len(characters), "assigning_voices")
         characters = await assign_voices(characters, self.tts, force=force)
+        if is_cancelled and is_cancelled():
+            raise asyncio.CancelledError()
         self.store.save_analysis(project, segments, characters)
+        if progress_callback:
+            progress_callback(len(characters), len(characters), "voices_assigned")
         return characters
 
     async def _generate_audio(
@@ -182,11 +209,29 @@ class TellerEngine:
         project: StoryProject,
         segments: list[Segment],
         characters: list[Character],
+        *,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> RenderStats:
         by_id = {character.id: character for character in characters}
-        results = await asyncio.gather(
-            *(self._audio_for_segment(project, segment, by_id) for segment in segments)
-        )
+        total = len(segments)
+        completed = 0
+        if progress_callback:
+            progress_callback(0, total, "rendering_started")
+
+        async def _render_one(seg: Segment) -> tuple[bytes, bool]:
+            nonlocal completed
+            if is_cancelled and is_cancelled():
+                raise asyncio.CancelledError()
+            res = await self._audio_for_segment(project, seg, by_id)
+            completed += 1
+            if progress_callback:
+                progress_callback(completed, total, "segment_rendered")
+            if is_cancelled and is_cancelled():
+                raise asyncio.CancelledError()
+            return res
+
+        results = await asyncio.gather(*(_render_one(segment) for segment in segments))
         self.store.save_analysis(project, segments, characters)
         return RenderStats(
             cache_hits=sum(hit for _, hit in results),
