@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { CheckIcon, DoctorIcon, WarningIcon } from "./Icons";
 
 interface DoctorModalProps {
   isOpen: boolean;
@@ -33,7 +34,9 @@ export const DoctorModal: React.FC<DoctorModalProps> = ({ isOpen, onClose }) => 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="doctor-title">
       <div className="modal-dialog">
-        <h2 id="doctor-title" className="modal-title">🩺 System Diagnostics (Doctor)</h2>
+        <h2 id="doctor-title" className="modal-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <DoctorIcon size={20} /> System Diagnostics
+        </h2>
 
         {loading ? (
           <div style={{ padding: "30px", textAlign: "center", color: "#666" }}>
@@ -54,8 +57,24 @@ export const DoctorModal: React.FC<DoctorModalProps> = ({ isOpen, onClose }) => 
                   <tr key={i} style={{ borderBottom: i < checks.length - 1 ? "1px solid #ddd" : "none", background: i % 2 === 0 ? "#fff" : "var(--paper-card)" }}>
                     <td style={{ padding: "8px 12px", fontWeight: "bold" }}>{c.name}</td>
                     <td style={{ padding: "8px 12px" }}>
-                      <span style={{ color: c.passed ? "#155724" : "#721c24", fontWeight: "bold" }}>
-                        {c.passed ? "✓ OK" : "✗ FAILED"}
+                      <span
+                        style={{
+                          color: c.passed ? "#155724" : "#721c24",
+                          fontWeight: "bold",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
+                        }}
+                      >
+                        {c.passed ? (
+                          <>
+                            <CheckIcon size={14} /> OK
+                          </>
+                        ) : (
+                          <>
+                            <WarningIcon size={14} /> FAILED
+                          </>
+                        )}
                       </span>
                     </td>
                     <td style={{ padding: "8px 12px", color: "#555", fontFamily: "var(--font-sans)" }}>{c.details}</td>
@@ -78,4 +97,3 @@ export const DoctorModal: React.FC<DoctorModalProps> = ({ isOpen, onClose }) => 
     </div>
   );
 };
-

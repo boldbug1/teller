@@ -327,14 +327,29 @@ def create_app(
             try:
 
                 def progress(msg: str) -> None:
-                    asyncio.create_task(operations.update(op_id, message_code=msg))
+                    comp = 0
+                    if ":" in msg and "%" in msg:
+                        try:
+                            fname, pct_part = msg.split(":")
+                            pct = int(pct_part.strip().rstrip("%"))
+                            comp = int(pct * 0.6) if "onnx" in fname else 60 + int(pct * 0.4)
+                        except Exception:
+                            comp = 0
+                    asyncio.create_task(
+                        operations.update(
+                            op_id,
+                            completed=comp,
+                            total=100,
+                            message_code=msg,
+                        )
+                    )
 
                 await asyncio.to_thread(ensure_kokoro_assets, cfg.paths.assets_dir, progress)
                 await operations.update(
                     op_id,
                     state="completed",
-                    completed=1,
-                    total=1,
+                    completed=100,
+                    total=100,
                     message_code="download_complete",
                 )
             except Exception as e:

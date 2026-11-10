@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Character, VoiceItem } from "../types";
+import { CheckIcon } from "./Icons";
 
 interface VoicePickerModalProps {
   isOpen: boolean;
@@ -72,8 +73,9 @@ export const VoicePickerModal: React.FC<VoicePickerModalProps> = ({
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: "bold", fontSize: "0.95rem" }}>
-                      {voice.name} {isSelected && "✓"}
+                    <div style={{ fontWeight: "bold", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: "6px" }}>
+                      {voice.name}
+                      {isSelected && <CheckIcon size={14} style={{ color: "var(--ink)" }} />}
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "#555" }}>
                       {voice.gender ? `${voice.gender} • ` : ""}
@@ -98,4 +100,3 @@ export const VoicePickerModal: React.FC<VoicePickerModalProps> = ({
     </div>
   );
 };
-

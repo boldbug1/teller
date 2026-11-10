@@ -1,5 +1,6 @@
 import React from "react";
 import { SetupStatus } from "../types";
+import { DoctorIcon, SettingsIcon } from "./Icons";
 
 interface HeaderProps {
   setupStatus: SetupStatus | null;
@@ -37,20 +38,21 @@ export const Header: React.FC<HeaderProps> = ({
           className="header-btn"
           onClick={onOpenDoctor}
           title="Run diagnostics on providers and audio"
-          aria-label="Doctor checks"
+          aria-label="Diagnostics"
+          style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
         >
-          🩺 Doctor
+          <DoctorIcon size={16} /> Diagnostics
         </button>
         <button
           className="header-btn"
           onClick={onOpenSettings}
           title="Configure providers and API keys"
           aria-label="Settings"
+          style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
         >
-          ⚙️ Settings
+          <SettingsIcon size={16} /> Settings
         </button>
       </div>
     </header>
   );
 };
-

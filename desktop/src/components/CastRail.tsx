@@ -1,5 +1,6 @@
 import React from "react";
 import { Character } from "../types";
+import { MicIcon, WarningIcon } from "./Icons";
 
 interface CastRailProps {
   characters: Character[];
@@ -72,8 +73,16 @@ export const CastRail: React.FC<CastRailProps> = ({
                   title="Click to change character voice"
                   aria-label={`Change voice for ${char.name}, currently ${char.voice?.voice_id || "unassigned"}`}
                 >
-                  <span style={{ fontWeight: 600 }}>
-                    {hasVoice ? `🎙️ ${char.voice?.voice_id}` : "⚠️ Select Voice"}
+                  <span style={{ fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                    {hasVoice ? (
+                      <>
+                        <MicIcon size={12} /> {char.voice?.voice_id}
+                      </>
+                    ) : (
+                      <>
+                        <WarningIcon size={12} style={{ color: "var(--rust)" }} /> Select Voice
+                      </>
+                    )}
                   </span>
                   <span style={{ fontSize: "0.7rem", color: "#666" }}>change</span>
                 </button>
@@ -85,4 +94,3 @@ export const CastRail: React.FC<CastRailProps> = ({
     </aside>
   );
 };
-

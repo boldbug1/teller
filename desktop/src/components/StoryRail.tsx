@@ -1,5 +1,6 @@
 import React from "react";
 import { StorySummary } from "../types";
+import { PlusIcon, TrashIcon } from "./Icons";
 
 interface StoryRailProps {
   stories: StorySummary[];
@@ -24,8 +25,9 @@ export const StoryRail: React.FC<StoryRailProps> = ({
           className="add-story-btn"
           onClick={onAddStory}
           aria-label="Add a new story"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
         >
-          <span style={{ fontSize: "1.2rem", lineHeight: 1 }}>+</span> Add Story
+          <PlusIcon size={15} /> Add Story
         </button>
       </div>
 
@@ -64,11 +66,15 @@ export const StoryRail: React.FC<StoryRailProps> = ({
                     style={{
                       opacity: 0.6,
                       fontSize: "0.9rem",
-                      padding: "2px 4px",
+                      padding: "4px",
                       cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--ink)",
                     }}
                   >
-                    🗑️
+                    <TrashIcon size={14} />
                   </button>
                 </div>
                 <div className="story-card-meta">
@@ -87,4 +93,3 @@ export const StoryRail: React.FC<StoryRailProps> = ({
     </aside>
   );
 };
-

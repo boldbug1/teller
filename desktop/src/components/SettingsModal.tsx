@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { SetupStatus } from "../types";
+import { CheckIcon, SettingsIcon, WarningIcon } from "./Icons";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -8,6 +9,27 @@ interface SettingsModalProps {
   setupStatus: SetupStatus | null;
   onRefreshStatus: () => void;
 }
+
+const GEMINI_LLM_MODELS = [
+  { value: "gemini-3.8-flash", label: "gemini-3.8-flash (Recommended - fast & high quality)" },
+  { value: "gemini-2.5-flash", label: "gemini-2.5-flash (Standard)" },
+  { value: "gemini-2.5-pro", label: "gemini-2.5-pro (In-depth analysis)" },
+];
+
+const OLLAMA_DEFAULT_MODELS = [
+  "llama3.2",
+  "mistral",
+  "qwen2.5",
+  "phi3",
+  "gemma2",
+];
+
+const ELEVENLABS_MODELS = [
+  { value: "eleven_multilingual_v2", label: "eleven_multilingual_v2 (Most Expressive - Recommended)" },
+  { value: "eleven_turbo_v2_5", label: "eleven_turbo_v2_5 (Low latency)" },
+  { value: "eleven_flash_v2_5", label: "eleven_flash_v2_5 (Ultra fast)" },
+  { value: "eleven_multilingual_v1", label: "eleven_multilingual_v1 (Classic)" },
+];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -20,11 +42,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [elevenlabsKey, setElevenlabsKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [downloadingKokoro, setDownloadingKokoro] = useState(false);
+  const [kokoroProgress, setKokoroProgress] = useState<number | null>(null);
+  const [kokoroMessage, setKokoroMessage] = useState<string>("");
+  const [customLlmModel, setCustomLlmModel] = useState(false);
+  const [customTtsModel, setCustomTtsModel] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      api.getConfig().then(setConfig).catch(console.error);
+      api.getConfig().then((cfg) => {
+        setConfig(cfg);
+        // Detect if currently configured model is custom
+        if (cfg.llm.provider === "gemini" && !GEMINI_LLM_MODELS.some((m) => m.value === cfg.llm.model)) {
+          setCustomLlmModel(true);
+        }
+        if (cfg.tts.provider === "elevenlabs" && !ELEVENLABS_MODELS.some((m) => m.value === cfg.tts.model)) {
+          setCustomTtsModel(true);
+        }
+      }).catch(console.error);
     }
   }, [isOpen]);
 
@@ -44,9 +79,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setElevenlabsKey("");
       }
       onRefreshStatus();
-      setMsg({ text: "Configuration saved successfully!", type: "success" });
+      setMsg({ text: "Settings saved successfully!", type: "success" });
     } catch (err: any) {
-      setMsg({ text: err.message || "Failed to save configuration", type: "error" });
+      setMsg({ text: err.message || "Failed to save settings", type: "error" });
     } finally {
       setSaving(false);
     }
@@ -54,21 +89,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleDownloadKokoro = async () => {
     setDownloadingKokoro(true);
+    setKokoroProgress(0);
+    setKokoroMessage("Initiating download...");
     try {
-      await api.downloadKokoroAssets();
-      setMsg({ text: "Kokoro asset download started.", type: "success" });
-      onRefreshStatus();
+      const res = await api.downloadKokoroAssets();
+      const opId = res.operation_id;
+
+      const interval = setInterval(async () => {
+        try {
+          const op = await api.getOperation(opId);
+          if (op) {
+            if (op.total > 0) {
+              const pct = Math.min(100, Math.round((op.completed / op.total) * 100));
+              setKokoroProgress(pct);
+            }
+            if (op.message_code) {
+              setKokoroMessage(op.message_code.replace(/_/g, " "));
+            }
+            if (op.state === "completed") {
+              clearInterval(interval);
+              setKokoroProgress(100);
+              setKokoroMessage("Kokoro voice assets ready!");
+              setDownloadingKokoro(false);
+              onRefreshStatus();
+              setMsg({ text: "Kokoro offline voice assets downloaded successfully!", type: "success" });
+            } else if (op.state === "failed") {
+              clearInterval(interval);
+              setDownloadingKokoro(false);
+              setKokoroProgress(null);
+              setMsg({ text: `Download failed: ${op.error || op.message_code}`, type: "error" });
+            }
+          }
+        } catch {
+          // ignore transient poll error
+        }
+      }, 500);
     } catch (err: any) {
-      setMsg({ text: err.message || "Failed to start download", type: "error" });
-    } finally {
       setDownloadingKokoro(false);
+      setKokoroProgress(null);
+      setMsg({ text: err.message || "Failed to start download", type: "error" });
     }
   };
+
+  // Compile Ollama models from setup status and defaults
+  const ollamaOptions = Array.from(
+    new Set([...(setupStatus?.ollama_models || []), ...OLLAMA_DEFAULT_MODELS])
+  );
 
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div className="modal-dialog">
-        <h2 id="settings-title" className="modal-title">Provider & System Settings</h2>
+        <h2 id="settings-title" className="modal-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <SettingsIcon size={20} /> Settings
+        </h2>
 
         {msg && (
           <div
@@ -86,129 +159,343 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         )}
 
-        {/* LLM Section */}
-        <h3 style={{ fontSize: "1.1rem", marginBottom: "8px" }}>Speaker Attribution (LLM)</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
-          <div>
-            <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Provider</label>
-            <select
-              value={config.llm.provider}
-              onChange={(e) =>
-                setConfig({
-                  ...config,
-                  llm: { ...config.llm, provider: e.target.value },
-                })
-              }
-            >
-              <option value="gemini">Gemini (Cloud)</option>
-              <option value="ollama">Ollama (Local)</option>
-            </select>
+        {/* Section 1: Story Analysis */}
+        <div style={{ marginBottom: "16px" }}>
+          <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>Story Analysis & Characters</h3>
+          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
+            The AI model used to detect dialogue, characters, and emotions in your stories.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div>
+              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Provider</label>
+              <select
+                value={config.llm.provider}
+                onChange={(e) => {
+                  const prov = e.target.value;
+                  const defModel = prov === "gemini" ? "gemini-3.8-flash" : (setupStatus?.ollama_models?.[0] || "llama3.2");
+                  setCustomLlmModel(false);
+                  setConfig({
+                    ...config,
+                    llm: { ...config.llm, provider: prov, model: defModel },
+                  });
+                }}
+              >
+                <option value="gemini">Gemini (Cloud)</option>
+                <option value="ollama">Ollama (Local / Offline)</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Model</label>
+              {config.llm.provider === "gemini" ? (
+                <>
+                  <select
+                    value={customLlmModel ? "custom" : config.llm.model}
+                    onChange={(e) => {
+                      if (e.target.value === "custom") {
+                        setCustomLlmModel(true);
+                      } else {
+                        setCustomLlmModel(false);
+                        setConfig({
+                          ...config,
+                          llm: { ...config.llm, model: e.target.value },
+                        });
+                      }
+                    }}
+                  >
+                    {GEMINI_LLM_MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                    <option value="custom">Custom model name...</option>
+                  </select>
+                  {customLlmModel && (
+                    <input
+                      type="text"
+                      placeholder="Enter Gemini model name"
+                      value={config.llm.model}
+                      style={{ marginTop: "6px" }}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          llm: { ...config.llm, model: e.target.value },
+                        })
+                      }
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  <select
+                    value={customLlmModel ? "custom" : config.llm.model}
+                    onChange={(e) => {
+                      if (e.target.value === "custom") {
+                        setCustomLlmModel(true);
+                      } else {
+                        setCustomLlmModel(false);
+                        setConfig({
+                          ...config,
+                          llm: { ...config.llm, model: e.target.value },
+                        });
+                      }
+                    }}
+                  >
+                    {ollamaOptions.map((modelName) => (
+                      <option key={modelName} value={modelName}>
+                        {modelName} {setupStatus?.ollama_models?.includes(modelName) ? "(Installed)" : ""}
+                      </option>
+                    ))}
+                    <option value="custom">Custom model name...</option>
+                  </select>
+                  {customLlmModel && (
+                    <input
+                      type="text"
+                      placeholder="Enter Ollama model name"
+                      value={config.llm.model}
+                      style={{ marginTop: "6px" }}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          llm: { ...config.llm, model: e.target.value },
+                        })
+                      }
+                    />
+                  )}
+                </>
+              )}
+            </div>
           </div>
-          <div>
-            <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Model</label>
+        </div>
+
+        {/* Section 2: Voice & Speech */}
+        <div style={{ marginBottom: "16px" }}>
+          <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>Voice & Speech (Text to Speech)</h3>
+          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
+            The voice engine that reads and speaks character lines out loud.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div>
+              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Voice Provider</label>
+              <select
+                value={config.tts.provider}
+                onChange={(e) => {
+                  const prov = e.target.value;
+                  let defModel = "gemini-3.8-flash-lite-tts";
+                  if (prov === "kokoro") defModel = "kokoro-v1.0-int8";
+                  if (prov === "elevenlabs") defModel = "eleven_multilingual_v2";
+                  setCustomTtsModel(false);
+                  setConfig({
+                    ...config,
+                    tts: { ...config.tts, provider: prov, model: defModel },
+                  });
+                }}
+              >
+                <option value="gemini">Gemini (Cloud)</option>
+                <option value="kokoro">Kokoro (Offline / Local)</option>
+                <option value="elevenlabs">ElevenLabs (High-Realism Cloud)</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Voice Model</label>
+              {config.tts.provider === "elevenlabs" ? (
+                <>
+                  <select
+                    value={customTtsModel ? "custom" : config.tts.model}
+                    onChange={(e) => {
+                      if (e.target.value === "custom") {
+                        setCustomTtsModel(true);
+                      } else {
+                        setCustomTtsModel(false);
+                        setConfig({
+                          ...config,
+                          tts: { ...config.tts, model: e.target.value },
+                        });
+                      }
+                    }}
+                  >
+                    {ELEVENLABS_MODELS.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
+                      </option>
+                    ))}
+                    <option value="custom">Custom model...</option>
+                  </select>
+                  {customTtsModel && (
+                    <input
+                      type="text"
+                      placeholder="Enter ElevenLabs model name"
+                      value={config.tts.model}
+                      style={{ marginTop: "6px" }}
+                      onChange={(e) =>
+                        setConfig({
+                          ...config,
+                          tts: { ...config.tts, model: e.target.value },
+                        })
+                      }
+                    />
+                  )}
+                </>
+              ) : config.tts.provider === "kokoro" ? (
+                <select
+                  value={config.tts.model}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      tts: { ...config.tts, model: e.target.value },
+                    })
+                  }
+                >
+                  <option value="kokoro-v1.0-int8">kokoro-v1.0-int8 (Built-in offline)</option>
+                </select>
+              ) : (
+                <select
+                  value={config.tts.model}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      tts: { ...config.tts, model: e.target.value },
+                    })
+                  }
+                >
+                  <option value="gemini-3.8-flash-lite-tts">gemini-3.8-flash-lite-tts (Standard)</option>
+                </select>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3: API Keys */}
+        <div style={{ marginBottom: "16px" }}>
+          <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>API Keys</h3>
+          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
+            Keys are saved in your system credential manager and never exposed in the browser.
+          </p>
+
+          <div style={{ marginBottom: "10px" }}>
+            <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
+              Gemini API Key
+              {setupStatus?.gemini_key_present ? (
+                <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem" }}>
+                  <CheckIcon size={13} /> Stored in Keychain
+                </span>
+              ) : (
+                <span style={{ color: "#777", fontSize: "0.75rem" }}>(Not configured)</span>
+              )}
+            </label>
             <input
               type="text"
-              value={config.llm.model}
-              onChange={(e) =>
-                setConfig({
-                  ...config,
-                  llm: { ...config.llm, model: e.target.value },
-                })
-              }
+              placeholder={setupStatus?.gemini_key_present ? "••••••••••••••••" : "Paste Gemini API Key"}
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
+              ElevenLabs API Key
+              {setupStatus?.elevenlabs_key_present ? (
+                <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem" }}>
+                  <CheckIcon size={13} /> Stored in Keychain
+                </span>
+              ) : (
+                <span style={{ color: "#777", fontSize: "0.75rem" }}>(Not configured)</span>
+              )}
+            </label>
+            <input
+              type="text"
+              placeholder={setupStatus?.elevenlabs_key_present ? "••••••••••••••••" : "Paste ElevenLabs API Key"}
+              value={elevenlabsKey}
+              onChange={(e) => setElevenlabsKey(e.target.value)}
             />
           </div>
         </div>
 
-        {/* TTS Section */}
-        <h3 style={{ fontSize: "1.1rem", marginBottom: "8px" }}>Voice Synthesis (TTS)</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
-          <div>
-            <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Provider</label>
-            <select
-              value={config.tts.provider}
-              onChange={(e) =>
-                setConfig({
-                  ...config,
-                  tts: { ...config.tts, provider: e.target.value },
-                })
-              }
-            >
-              <option value="gemini">Gemini (Cloud)</option>
-              <option value="kokoro">Kokoro ONNX (Local)</option>
-              <option value="elevenlabs">ElevenLabs (Cloud)</option>
-            </select>
+        {/* Section 4: Kokoro Offline Voice Assets with Live Progress */}
+        <div
+          style={{
+            padding: "12px",
+            background: "var(--paper-card)",
+            border: "1.5px dashed var(--ink)",
+            borderRadius: "3px",
+            marginBottom: "16px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+            <span style={{ fontWeight: "bold", fontSize: "0.9rem" }}>
+              Kokoro Offline Voice Files (142 MB)
+            </span>
+            <span style={{ fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+              {setupStatus?.kokoro_model_present && setupStatus?.kokoro_voices_present ? (
+                <span style={{ color: "#155724", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                  <CheckIcon size={13} /> Ready on disk
+                </span>
+              ) : (
+                <span style={{ color: "var(--rust)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                  <WarningIcon size={13} /> Not downloaded
+                </span>
+              )}
+            </span>
           </div>
-          <div>
-            <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Model</label>
-            <input
-              type="text"
-              value={config.tts.model}
-              onChange={(e) =>
-                setConfig({
-                  ...config,
-                  tts: { ...config.tts, model: e.target.value },
-                })
-              }
-            />
-          </div>
-        </div>
 
-        {/* Credentials BYOK Section */}
-        <h3 style={{ fontSize: "1.1rem", marginBottom: "8px" }}>API Credentials (BYOK)</h3>
-        <p style={{ fontSize: "0.8rem", color: "#666", marginTop: "-4px" }}>
-          Keys are stored in your operating system credential manager and never returned to the frontend.
-        </p>
+          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 10px 0" }}>
+            Required for local text-to-speech without internet connection.
+          </p>
 
-        <div style={{ marginBottom: "10px" }}>
-          <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>
-            Gemini API Key {setupStatus?.gemini_key_present ? "✓ (Stored in Keyring)" : "(Not set)"}
-          </label>
-          <input
-            type="text"
-            placeholder={setupStatus?.gemini_key_present ? "••••••••••••••••" : "Paste Gemini API Key"}
-            value={geminiKey}
-            onChange={(e) => setGeminiKey(e.target.value)}
-          />
-        </div>
-
-        <div style={{ marginBottom: "14px" }}>
-          <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>
-            ElevenLabs API Key {setupStatus?.elevenlabs_key_present ? "✓ (Stored in Keyring)" : "(Not set)"}
-          </label>
-          <input
-            type="text"
-            placeholder={setupStatus?.elevenlabs_key_present ? "••••••••••••••••" : "Paste ElevenLabs API Key"}
-            value={elevenlabsKey}
-            onChange={(e) => setElevenlabsKey(e.target.value)}
-          />
-        </div>
-
-        {/* Kokoro Assets Section */}
-        <div style={{ padding: "12px", background: "var(--paper-card)", border: "1px dashed var(--ink)", borderRadius: "3px", marginBottom: "16px" }}>
-          <div style={{ fontWeight: "bold", fontSize: "0.9rem", marginBottom: "4px" }}>
-            Kokoro Offline Assets (142 MB)
-          </div>
-          <div style={{ fontSize: "0.8rem", color: "#666", marginBottom: "8px" }}>
-            Status: {setupStatus?.kokoro_model_present && setupStatus?.kokoro_voices_present
-              ? "✓ Models & Voices present on disk"
-              : "⚠️ Assets not found"}
-          </div>
           <button
             type="button"
             className="btn-secondary"
-            style={{ fontSize: "0.8rem" }}
+            style={{ fontSize: "0.8rem", width: "100%" }}
             onClick={handleDownloadKokoro}
             disabled={downloadingKokoro}
           >
-            {downloadingKokoro ? "Starting download..." : "Download Kokoro Assets"}
+            {downloadingKokoro
+              ? `Downloading Kokoro Assets (${kokoroProgress ?? 0}%)...`
+              : setupStatus?.kokoro_model_present && setupStatus?.kokoro_voices_present
+              ? "Re-download Kokoro Assets"
+              : "Download Kokoro Assets"}
           </button>
+
+          {/* Live Progress Bar */}
+          {kokoroProgress !== null && (
+            <div style={{ marginTop: "10px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: "4px" }}>
+                <span style={{ fontFamily: "var(--font-sans)", color: "var(--ink)" }}>
+                  {kokoroMessage || "Downloading voice assets..."}
+                </span>
+                <span style={{ fontWeight: "bold" }}>{kokoroProgress}%</span>
+              </div>
+              <div
+                style={{
+                  width: "100%",
+                  height: "8px",
+                  background: "#e5dac4",
+                  border: "1px solid var(--ink)",
+                  borderRadius: "2px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${kokoroProgress}%`,
+                    height: "100%",
+                    background: "var(--rust)",
+                    transition: "width 0.25s ease-in-out",
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving || downloadingKokoro}>
             Close
           </button>
-          <button type="button" className="btn-primary" onClick={handleSaveConfig} disabled={saving}>
+          <button type="button" className="btn-primary" onClick={handleSaveConfig} disabled={saving || downloadingKokoro}>
             {saving ? "Saving..." : "Save Settings"}
           </button>
         </div>
@@ -216,4 +503,3 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     </div>
   );
 };
-

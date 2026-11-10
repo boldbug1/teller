@@ -1,4 +1,5 @@
 import React from "react";
+import { NextIcon, PauseIcon, PlayIcon, PrevIcon, VolumeIcon } from "./Icons";
 
 interface TransportProps {
   isPlaying: boolean;
@@ -43,8 +44,9 @@ export const Transport: React.FC<TransportProps> = ({
           disabled={disabled}
           title="Previous segment"
           aria-label="Previous segment"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
         >
-          ⏮
+          <PrevIcon size={14} />
         </button>
 
         <button
@@ -53,8 +55,9 @@ export const Transport: React.FC<TransportProps> = ({
           disabled={disabled}
           title={isPlaying ? "Pause" : "Play"}
           aria-label={isPlaying ? "Pause" : "Play"}
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
         >
-          {isPlaying ? "⏸" : "▶"}
+          {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={16} style={{ marginLeft: "2px" }} />}
         </button>
 
         <button
@@ -63,8 +66,9 @@ export const Transport: React.FC<TransportProps> = ({
           disabled={disabled}
           title="Next segment"
           aria-label="Next segment"
+          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
         >
-          ⏭
+          <NextIcon size={14} />
         </button>
       </div>
 
@@ -79,7 +83,7 @@ export const Transport: React.FC<TransportProps> = ({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <span style={{ fontSize: "0.9rem" }} title="Volume">🔊</span>
+        <VolumeIcon size={16} style={{ color: "#555" }} />
         <input
           type="range"
           min="0"
@@ -94,4 +98,3 @@ export const Transport: React.FC<TransportProps> = ({
     </footer>
   );
 };
-

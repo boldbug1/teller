@@ -1,5 +1,6 @@
 import React from "react";
 import { OperationEvent, Segment, StoryDetail } from "../types";
+import { AnalyzeIcon, MicIcon } from "./Icons";
 
 interface StorySceneProps {
   story: StoryDetail | null;
@@ -77,16 +78,18 @@ export const StoryScene: React.FC<StorySceneProps> = ({
               onClick={() => onAnalyze(false)}
               disabled={Boolean(isOpActive)}
               title="Tag characters, dialogue, and emotion"
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
             >
-              🎭 {story.segments.length > 0 ? "Re-Analyze" : "Analyze Story"}
+              <AnalyzeIcon size={16} /> {story.segments.length > 0 ? "Re-Analyze" : "Analyze Story"}
             </button>
             <button
               className="btn-primary"
               onClick={onRender}
               disabled={Boolean(isOpActive || story.segments.length === 0)}
               title="Synthesize all dialogue into audio"
+              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
             >
-              🎙️ Render Voices
+              <MicIcon size={16} /> Render Voices
             </button>
           </div>
         </div>
