@@ -181,7 +181,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 value={config.llm.provider}
                 onChange={(e) => {
                   const prov = e.target.value;
-                  const defModel = prov === "gemini" ? "gemini-3.8-flash" : (setupStatus?.ollama_models?.[0] || "llama3.2");
+                  const defModel = prov === "gemini" ? "gemini-3.8-flash" : prov === "rule_based" ? "builtin" : (setupStatus?.ollama_models?.[0] || "llama3.2");
                   setCustomLlmModel(false);
                   setConfig({
                     ...config,
@@ -189,14 +189,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   });
                 }}
               >
-                <option value="gemini">Gemini (Cloud)</option>
-                <option value="ollama">Ollama (Local / Offline)</option>
+                <option value="gemini">Gemini (Cloud AI)</option>
+                <option value="rule_based">Rule-Based / Instant (100% Offline & Free)</option>
+                <option value="ollama">Ollama (Local AI / Offline)</option>
               </select>
             </div>
 
             <div>
               <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Model</label>
-              {config.llm.provider === "gemini" ? (
+              {config.llm.provider === "rule_based" ? (
+                <select disabled value="builtin">
+                  <option value="builtin">Built-in Dialogue & Cast Parser</option>
+                </select>
+              ) : config.llm.provider === "gemini" ? (
                 <>
                   <select
                     value={customLlmModel ? "custom" : config.llm.model}

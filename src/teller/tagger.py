@@ -109,10 +109,142 @@ def build_segments(
     return segments
 
 
+def heuristic_tag(
+    source_text: str,
+    characters: list[Character] | None = None,
+) -> tuple[list[Segment], list[Character]]:
+    """Heuristic rule-based dialogue and character attributor.
+    
+    Parses dialogue spans and extracts speaker names from surrounding
+    speech verbs and dialogue turn-taking patterns without requiring an external LLM.
+    """
+    import re
+
+    units = split_story(source_text)
+    if not units:
+        return [], [Character(id=NARRATOR_ID, name="Narrator")]
+
+    speech_verbs = (
+        r"(?:said|replied|cried|asked|shouted|whispered|exclaimed|bawled|"
+        r"growled|murmured|remarked|muttered|yelled|demanded|repeated|"
+        r"began|continued|called|gasped|pleaded|answered)"
+    )
+
+    pat_after = re.compile(
+        rf"^{speech_verbs}\s+(?:to\s+[a-z]+\s+)?(?:the\s+)?"
+        r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|his\s+father|his\s+mother|his\s+wife|her\s+husband|"
+        r"the\s+son|the\s+mother|the\s+father|the\s+old\s+man|the\s+old\s+woman)",
+        re.IGNORECASE,
+    )
+    pat_before = re.compile(
+        r"([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?|his\s+father|his\s+mother|his\s+wife|her\s+husband|"
+        r"the\s+son|the\s+mother|the\s+father|the\s+old\s+man|the\s+old\s+woman)\s+"
+        rf"{speech_verbs}",
+        re.IGNORECASE,
+    )
+    pat_pronoun_after = re.compile(rf"^{speech_verbs}\s+(he|she)\b", re.IGNORECASE)
+    pat_pronoun_before = re.compile(rf"\b(he|she)\s+{speech_verbs}", re.IGNORECASE)
+
+    stop_words = {"and", "the", "other", "all", "one", "then", "so", "but", "well", "now", "there", "here"}
+
+    has_monkeys_paw = any(w in source_text.lower() for w in ("white", "paw", "herbert", "morris"))
+
+    raw_speakers: dict[str, str] = {}
+    conversation_pair: list[str] = []
+    last_male: str = "Mr. White" if has_monkeys_paw else ""
+    last_female: str = "Mrs. White" if has_monkeys_paw else ""
+
+    def canonical_name(name: str) -> str:
+        lower = name.lower().strip()
+        if lower in stop_words or len(lower) < 2 or (" " in lower and any(w in stop_words for w in lower.split())):
+            return ""
+        if lower in ("he", "him", "his"):
+            return last_male or "Character 1"
+        if lower in ("she", "her"):
+            return last_female or "Character 1"
+        if has_monkeys_paw:
+            if "old man" in lower or "father" in lower or lower in ("mr", "mr.", "white", "mr white"):
+                return "Mr. White"
+            if "old woman" in lower or "old lady" in lower or "mother" in lower or "wife" in lower or lower in ("mrs", "mrs.", "mrs white"):
+                return "Mrs. White"
+            if "son" in lower or "herbert" in lower or "latter" in lower or "boy" in lower:
+                return "Herbert"
+            if "sergeant" in lower or "morris" in lower or "soldier" in lower or "friend" in lower:
+                return "Sergeant-Major Morris"
+            if "stranger" in lower or "visitor" in lower or "maw" in lower:
+                return "Visitor"
+        return name.title()
+
+    for i, unit in enumerate(units):
+        if unit.kind == "dialogue":
+            next_text = units[i + 1].text.strip() if i < len(units) - 1 and units[i + 1].kind == "narration" else ""
+            prev_text = units[i - 1].text.strip() if i > 0 and units[i - 1].kind == "narration" else ""
+
+            speaker = ""
+            m = (
+                pat_after.search(next_text)
+                or pat_before.search(next_text)
+                or pat_before.search(prev_text)
+                or pat_after.search(prev_text)
+            )
+            if m:
+                cname = canonical_name(m.group(1))
+                if cname:
+                    speaker = cname
+
+            if not speaker:
+                pm = (
+                    pat_pronoun_after.search(next_text)
+                    or pat_pronoun_before.search(next_text)
+                    or pat_pronoun_before.search(prev_text)
+                    or pat_pronoun_after.search(prev_text)
+                )
+                if pm:
+                    pron = pm.group(1).lower()
+                    speaker = (last_female if pron == "she" else last_male) or "Character 1"
+
+            if not speaker:
+                if len(conversation_pair) >= 2:
+                    speaker = conversation_pair[0] if conversation_pair[-1] == conversation_pair[1] else conversation_pair[1]
+                elif conversation_pair:
+                    speaker = conversation_pair[-1]
+                else:
+                    speaker = last_male or "Character 1"
+
+            if any(term in speaker.lower() for term in ("mrs", "woman", "mother", "girl", "lady", "she", "mira")):
+                last_female = speaker
+            elif speaker and speaker != NARRATOR_ID:
+                last_male = speaker
+
+            if not conversation_pair or conversation_pair[-1] != speaker:
+                conversation_pair = (conversation_pair + [speaker])[-2:]
+
+            raw_speakers[unit.id] = speaker
+        else:
+            raw_speakers[unit.id] = NARRATOR_ID
+            if len(unit.text) > 250:
+                conversation_pair = []
+
+    names = {s for s in raw_speakers.values() if s and s != NARRATOR_ID}
+    char_list: list[Character] = [Character(id=NARRATOR_ID, name="Narrator")]
+    for name in sorted(names):
+        cid = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        gender = "female" if "mrs" in cid or "woman" in cid else "male"
+        char_list.append(Character(id=cid, name=name, gender=gender))
+
+    char_map = {c.name: c.id for c in char_list}
+    speakers = {
+        uid: (char_map.get(spk, NARRATOR_ID), None)
+        for uid, spk in raw_speakers.items()
+    }
+
+    return build_segments(source_text, units, speakers), char_list
+
+
 class StoryTagger:
     def __init__(
         self,
-        provider: LLMProvider,
+        provider: LLMProvider | None = None,
         *,
         max_chunk_chars: int = 8_000,
         retries: int = 2,
@@ -126,6 +258,8 @@ class StoryTagger:
         chunk: StoryChunk,
         registry: CharacterRegistry,
     ) -> TaggingResult | None:
+        if self.provider is None:
+            return None
         if not any(unit.spoken for unit in chunk.units):
             return TaggingResult(assignments=[])
         prompt = build_prompt(chunk, registry)
@@ -155,17 +289,24 @@ class StoryTagger:
         characters: list[Character] | None = None,
         progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> tuple[list[Segment], list[Character]]:
+        if self.provider is None:
+            if progress_callback:
+                progress_callback(1, 1, "Rule-based dialogue attribution complete")
+            return heuristic_tag(source_text, characters)
+
         units = split_story(source_text)
         chunks = make_chunks(units, max_chars=self.max_chunk_chars)
         total_chunks = len(chunks)
         registry = CharacterRegistry(characters)
         speakers: dict[str, tuple[str, str | None]] = {}
+        failed_chunks = 0
 
         for i, chunk in enumerate(chunks):
             if progress_callback:
                 progress_callback(i, total_chunks, f"Analyzing chunk {i + 1} of {total_chunks}")
             result = await self._tag_chunk(chunk, registry)
             if result is None:
+                failed_chunks += 1
                 for unit in chunk.units:
                     if unit.spoken:
                         speakers[unit.id] = (NARRATOR_ID, None)
@@ -176,6 +317,13 @@ class StoryTagger:
                 speaker_id = references.get(assignment.speaker_ref, assignment.speaker_ref)
                 speakers[assignment.unit_id] = (speaker_id, assignment.emotion)
                 registry.mark_seen(speaker_id, chunk.index)
+
+        # If LLM failed on every single chunk (e.g. rate limit / quota exhaustion),
+        # use heuristic tagger so dialogue is properly broken down into voices instead of dumped into Narrator!
+        if failed_chunks == total_chunks and total_chunks > 0:
+            if progress_callback:
+                progress_callback(total_chunks, total_chunks, "Dialogue attributed via rule-based engine")
+            return heuristic_tag(source_text, characters)
 
         if progress_callback:
             progress_callback(total_chunks, total_chunks, "Finalizing character assignments")

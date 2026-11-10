@@ -46,7 +46,7 @@ class TellerEngine:
             if progress_callback:
                 progress_callback(1, 1, "analysis_loaded")
             return existing
-        if self.llm is None:
+        if self.llm is None and self.config.llm.provider not in ("rule_based", "heuristic", "offline"):
             raise RuntimeError("This story needs analysis, but no LLM provider is configured")
         if progress_callback:
             progress_callback(0, 1, "starting_analysis")

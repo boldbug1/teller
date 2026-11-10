@@ -48,13 +48,15 @@ async def test_tagger_retries_invalid_json_and_attributes_dialogue() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tagger_falls_back_to_narrator_after_invalid_assignments() -> None:
+async def test_tagger_falls_back_to_heuristic_after_invalid_assignments() -> None:
     provider = QueueLLM(["{}", "{}"])
 
-    segments, _ = await StoryTagger(provider, retries=1).tag('"Hello," Mira said.')
+    segments, characters = await StoryTagger(provider, retries=1).tag('"Hello," Mira said.')
 
     assert provider.calls == 2
-    assert all(segment.speaker_id == "narrator" for segment in segments)
+    # Falls back to heuristic tagger so dialogue is attributed to Mira instead of lost to Narrator
+    assert any(segment.speaker_id == "mira" for segment in segments)
+    assert any(c.name == "Mira" for c in characters)
 
 
 def test_tagging_schema_is_json_serializable() -> None:

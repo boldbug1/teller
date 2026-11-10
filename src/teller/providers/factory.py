@@ -6,7 +6,9 @@ from teller.providers.protocols import LLMProvider, TTSProvider
 from teller.secrets import get_api_key
 
 
-def create_llm(config: AppConfig) -> LLMProvider:
+def create_llm(config: AppConfig) -> LLMProvider | None:
+    if config.llm.provider in ("rule_based", "heuristic", "offline"):
+        return None
     if config.llm.provider == "gemini":
         from teller.providers.llm_gemini import GeminiLLM
 
