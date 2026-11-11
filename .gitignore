@@ -17,3 +17,7 @@ desktop/dist/
 # Tauri / Rust target & sidecar executables
 desktop/src-tauri/target/
 desktop/src-tauri/binaries/*.exe
+
+# Private documentation & internal notes
+private_docs/
+
