@@ -27,19 +27,16 @@ Teller turns any story into a full-cast performance. Whether running locally or 
 
 ---
 
-## Screenshots
+## Screenshots & Demo
 
-### Story Performance View
-![Teller Story Performance](docs/images/story-demo.png)
+### Stage Performance
+![Teller Paper Theatre Showcase](docs/images/teller-showcase.jpg)
 *Synchronized speech playback, dialogue stream, live audio transport, and cast character management.*
 
-### Clean Empty State
-![Teller Clean Empty State](docs/images/main-menu-empty.png)
-*One-click story import zone accepting plain text, Markdown, PDF, and DOCX files.*
+### Video Demo
+<video src="docs/images/Teller_Full_Uncropped.mp4" controls="controls" width="100%"></video>
 
-### Story Import Dialog
-![Teller Add Story Dialog](docs/images/add-menu.png)
-*File upload and text ingestion with automatic title and format recognition.*
+> Download or watch the full resolution demo: [Teller_Full_Uncropped.mp4](docs/images/Teller_Full_Uncropped.mp4)
 
 ---
 
@@ -205,7 +202,7 @@ teller/
 │   ├── src-tauri/            # Tauri 2 Rust harness and configuration
 │   └── public/               # Application icons and vector branding
 ├── docs/                     # Project documentation and visual assets
-│   ├── images/               # Screenshots and thumbnail assets
+│   ├── images/               # Showcase screenshot, video demo, and brand assets
 │   └── ARCHITECTURE.md       # Detailed technical architecture guide
 ├── stories/                  # Local story library and audio cache
 ├── scripts/                  # Build scripts for sidecar and desktop app
