@@ -1,181 +1,237 @@
 # Teller
 
-> **Transform plain-text stories and books into multi-voice audio dramas.**  
-> Teller parses narration and dialogue, maintains a persistent character cast, assigns distinct voices, synthesizes speech ahead of playback, and provides one-click master audio downloads.
+![Teller Banner](docs/images/thumbnail.png)
+
+> Transform plain-text stories, books, and scripts into multi-voice audio dramas.  
+> Teller parses narration and dialogue, maintains a persistent character cast, assigns distinct voices, synthesizes speech ahead of playback, and exports stitched master audiobooks.
 
 ---
 
-## ⚡ Quick Start: 1-Click Desktop Launch
+## Overview
 
-On Windows, simply run:
+Teller turns any story into a full-cast performance. Whether running locally or using cloud models, Teller identifies characters, extracts dialogue, attributes speech to individual voices, and plays back the story with word-by-word synchronized karaoke highlighting.
+
+---
+
+## Screenshots
+
+### Story Performance View
+![Teller Story Performance](docs/images/story-demo.png)
+*Synchronized speech playback, dialogue stream, live audio transport, and cast character management.*
+
+### Clean Empty State
+![Teller Clean Empty State](docs/images/main-menu-empty.png)
+*One-click story import zone accepting plain text, Markdown, PDF, and DOCX files.*
+
+### Story Import Dialog
+![Teller Add Story Dialog](docs/images/add-menu.png)
+*File upload and text ingestion with automatic title and format recognition.*
+
+---
+
+## Quick Start
+
+### Windows 1-Click Launch
+
+On Windows, run the provided launch script from the project root:
 
 ```cmd
 start.bat
 ```
 
-> **That's it!** In a source checkout with Node.js and Rust installed, `start.bat` launches the latest code through Tauri development mode. Use `start.bat --release` to launch the existing packaged binary instead.
+- When running in a source checkout with Node.js and Rust installed, `start.bat` launches Teller in live development mode with hot-reloading.
+- To launch the compiled release executable instead, run:
 
-### What you can do right away:
-1. **Import Stories**: Click **+ Add Story** to paste text or import `.txt`, `.md`, `.pdf`, or `.docx` documents with automatic title detection.
-2. **Analyze & Cast**: Click **Analyze Story** to parse characters and dialogue using **Groq** (recommended, sub-second Llama 3.3), **Gemini**, **Ollama** (local), or the built-in offline **Rule-Based Engine**.
-3. **Assign Voices**: Customize character voices in **The Cast** rail using **Kokoro** (100% offline), **ElevenLabs**, or **Gemini**.
-4. **Render Voices**: Synthesize speech with live progress tracking and zero duplicate API calls (deterministic cache).
-5. **Download Master Audio**: Click **Download Audio** on the stage to save a clean, stitched `.wav` audiobook to your computer.
-
----
-
-## 🎭 Screenshots
-
-<div align="center">
-  <img src="docs/images/teller-performance-view.jpg" alt="Teller Paper Theatre Performance View" width="95%" />
-  <p><em>The Paper Theatre Studio: multi-voice dialogue tagging, character cast rail, and synchronized audio playback.</em></p>
-</div>
-
-<div align="center">
-  <img src="docs/images/teller-studio-overview.jpg" alt="Teller Story Analysis & Voice Rendering" width="95%" />
-  <p><em>Real-time analysis progress, background voice synthesis, and one-click audio export.</em></p>
-</div>
-
----
-
-## 🌟 Key Features
-
-- **Multi-Voice Dialogue Attribution**: Accurately separates narrator passages from character dialogue without rewriting your story.
-- **Ultra-Fast LLM Providers**:
-  - **Groq** *(Llama 3.3 70B & 8B)*: Instantaneous, sub-second dialogue analysis with high accuracy.
-  - **Google Gemini** *(Flash / Pro)*: Fast cloud analysis and native multi-speaker TTS.
-  - **Ollama**: 100% private, local LLM analysis (e.g. `qwen2.5`, `llama3.2`).
-  - **Built-in Rule Engine**: Deterministic regex/heuristic fallback requiring zero API keys or external services.
-- **Voice Synthesis Options**:
-  - **Kokoro ONNX**: Free, lightweight offline neural TTS (~140MB INT8 model).
-  - **ElevenLabs**: Premium speech synthesis with automatic rate-limit clamping (429 concurrency prevention) and exponential backoff retry.
-  - **Gemini TTS**: Cloud voices matching your Gemini key.
-- **Full Story Audio Download & Export**: Combine hundreds of rendered dialogue segments with natural inter-speaker pauses into a master 16-bit PCM WAV audiobook via desktop UI or CLI.
-- **Paper Theatre Desktop UI**: Built with Tauri 2, React 19, TypeScript, masked secure API key storage in the OS credential manager, and Web Audio streaming playback.
-
----
-
-## 🛠️ CLI Quick Reference
-
-Teller can also run entirely as a headless command-line tool:
-
-```console
-# 1. Analyze and tag character dialogue
-teller analyze path/to/story.txt
-
-# 2. Synthesize missing speech segments
-teller render path/to/story.txt
-
-# 3. Play through system audio output
-teller play path/to/story.txt
-
-# 4. Export full stitched audio story to a single WAV file
-teller export monkeys-paw-9f742a64 -o my_audiobook.wav
-
-# 5. Check character cast and customize voices
-teller cast stories/my-story-ab12cd34
-teller voices list
-teller voices set stories/my-story-ab12cd34 "Mr. White" am_adam
+```cmd
+start.bat --release
 ```
 
+### Pre-Built Binaries
+
+Release installers and standalone executables are output to:
+- Standalone Executable: `desktop/src-tauri/target/release/teller-desktop.exe`
+- Windows Installer: `desktop/src-tauri/target/release/bundle/nsis/Teller_0.1.0_x64-setup.exe`
+
 ---
 
-## 📦 Requirements & Manual Setup
+## Key Features
 
-If you want to run from source or build the application manually:
+- **Accurate Dialogue Attribution**: Separates narrator prose from character dialogue without modifying or rewriting original text.
+- **Multiple LLM Providers**:
+  - **Groq Cloud AI**: Fast dialogue analysis powered by models like `openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, and `openai/gpt-oss-20b`.
+  - **Google Gemini**: Cloud analysis and native multi-speaker voice synthesis.
+  - **Ollama**: Local, private LLM execution without external network requests.
+  - **Rule-Based Engine**: Built-in regex and heuristic attribution requiring no API keys.
+- **Voice Synthesis Options**:
+  - **Kokoro ONNX**: High-quality offline neural TTS using a lightweight INT8 model (~140 MB).
+  - **ElevenLabs**: Expressive cloud voices with automatic rate-limit protection and backoff retries.
+  - **Gemini TTS**: High-speed speech synthesis matching your Google AI configuration.
+- **Master Audio Export**: Stitches rendered dialogue segments with natural inter-speaker pauses into a single 16-bit PCM WAV audiobook.
+- **Deterministic Audio Cache**: Every line of speech is cached by exact text, voice parameters, emotion, and speed, preventing duplicate API costs.
+- **Secure Key Management**: API credentials are saved directly in your operating system credential store (Windows Credential Manager, macOS Keychain, Linux Secret Service).
+- **Paper Theatre Interface**: Custom Windows titlebar controls, responsive rails, and clean aesthetic typography.
+
+---
+
+## Installation & Setup
+
+### Prerequisites
 
 - **Python**: 3.10 through 3.13
-- **Node.js**: v18+ (for desktop frontend)
-- **Rust**: Latest stable (for Tauri desktop binary)
-- **Audio Output**: Any standard system audio device
+- **Node.js**: 18 or higher (for frontend development)
+- **Rust**: Latest stable toolchain (for Tauri desktop binary)
+- **Audio Device**: Standard system audio output
 
-### Manual Python Installation
+### 1. Clone the Repository
 
-```console
-# Clone repository
+```bash
 git clone https://github.com/boldbug1/teller.git
 cd teller
+```
 
-# Create and activate virtual environment
+### 2. Python Environment Setup
+
+Create and activate a virtual environment:
+
+```bash
+# On Windows
 python -m venv .venv
 .venv\Scripts\activate
 
-# Install with all providers
+# On macOS / Linux
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install package dependencies:
+
+```bash
+# Full installation (all cloud and local providers)
 pip install -e ".[all]"
+
+# Or choose specific profiles:
+pip install -e ".[cloud]"   # Groq, Gemini, ElevenLabs
+pip install -e ".[local]"   # Kokoro ONNX offline TTS
 ```
 
-For cloud-only or local-only setups:
-```console
-pip install -e ".[cloud]"   # Gemini, Groq, ElevenLabs
-pip install -e ".[local]"   # Kokoro ONNX, sounddevice
-```
+### 3. Provider Configuration
 
-### Provider Configuration
+Configure API keys and model preferences:
 
-Run the interactive setup assistant or doctor check:
-
-```console
-# Configure providers and keys
+```bash
+# Interactive setup wizard
 teller setup
 
-# Validate configuration and network connectivity
+# Validate configuration and connectivity
 teller doctor
 ```
 
-API keys are securely persisted in the operating system credential manager (Windows Credential Manager / macOS Keychain / Linux SecretService). You can also provide keys via environment variables:
-- `GROQ_API_KEY`
-- `GEMINI_API_KEY`
-- `ELEVENLABS_API_KEY`
+Alternatively, set environment variables:
+- `GROQ_API_KEY`: API key for Groq Cloud.
+- `GEMINI_API_KEY`: API key for Google Gemini.
+- `ELEVENLABS_API_KEY`: API key for ElevenLabs.
 
----
+### 4. Desktop Frontend Setup
 
-## 🖥️ Desktop Application Development
-
-Teller's desktop application uses Tauri 2 and React 19:
-
-```console
-# 1. Install frontend dependencies
+```bash
 cd desktop
 npm install
-
-# 2. Run in development mode with hot-reloading
 npm run tauri dev
-
-# 3. Run frontend unit tests
-npm test
-
-# 4. Build self-contained release executable
-npm run build
-npm run tauri build -- --no-bundle
-```
-
-To recompile the Python engine sidecar:
-```powershell
-.\scripts\build_sidecar.ps1
 ```
 
 ---
 
-## 📁 Storage Architecture
+## Command-Line Interface (CLI)
 
-Every imported story is stored under `stories/<title>-<source-hash>/`:
+Teller includes a command-line interface for headless environments and automated workflows:
+
+```bash
+# Analyze story text and detect characters
+teller analyze path/to/story.txt
+
+# Synthesize speech for all dialogue lines
+teller render path/to/story.txt
+
+# Play story audio through the system output
+teller play path/to/story.txt
+
+# Export a master WAV audiobook
+teller export my-story-id -o output_audiobook.wav
+
+# Inspect the cast and set character voices
+teller cast stories/my-story-id
+teller voices list
+teller voices set stories/my-story-id "Character Name" voice_id
+```
+
+---
+
+## Project Structure
 
 ```text
-story.txt              # Original untouched source text
-manifest.json          # Story metadata and unique ID
-analysis.json          # Character list and dialogue assignments (source of truth)
-characters.json        # Character voice mapping mirror
-segments.json          # Segment timestamps and text mirror
-audio/<cache-hash>.wav # Exact-phrase deterministic WAV audio cache
+teller/
+├── src/teller/               # Core Python library and engine
+│   ├── api.py                # FastAPI REST and WebSocket API
+│   ├── tagger.py             # Dialogue attribution and chunking
+│   ├── pipeline.py           # Audio rendering and synthesis pipeline
+│   ├── characters.py         # Character registry and voice assignment
+│   ├── providers/            # LLM and TTS provider adapters
+│   │   ├── llm_groq.py       # Groq client
+│   │   ├── llm_gemini.py     # Gemini client
+│   │   ├── llm_ollama.py     # Ollama local client
+│   │   ├── tts_kokoro.py     # Kokoro ONNX engine
+│   │   └── tts_elevenlabs.py # ElevenLabs engine
+│   ├── audio_export.py       # Audio concatenation and WAV stitching
+│   └── server.py             # HTTP server entrypoint for the sidecar
+├── desktop/                  # Desktop application
+│   ├── src/                  # React 19 + TypeScript source
+│   │   ├── components/       # UI components (Header, StoryScene, CastRail)
+│   │   ├── styles/           # CSS design system (paper-theatre.css)
+│   │   └── audio/            # HTML5/WebAudio playback engine
+│   ├── src-tauri/            # Tauri 2 Rust harness and configuration
+│   └── public/               # Application icons and vector branding
+├── docs/                     # Project documentation and visual assets
+│   ├── images/               # Screenshots and thumbnail assets
+│   └── ARCHITECTURE.md       # Detailed technical architecture guide
+├── stories/                  # Local story library and audio cache
+├── scripts/                  # Build scripts for sidecar and desktop app
+├── CONTRIBUTING.md           # Contribution guidelines
+├── AGENTS.md                 # System instructions for AI coding agents
+├── pyproject.toml            # Python packaging and dependencies
+└── start.bat                 # Windows one-click desktop launcher
 ```
-
-- **Deterministic Cache**: Audio cache keys hash the exact text, provider, model, voice ID, emotion style, speed, and language.
-- Re-playing or re-rendering never incurs duplicate API charges for identical segments.
 
 ---
 
-## 📜 Responsible Use & License
+## Storage & Audio Cache
 
-Generated voices are synthetic. Disclose that fact to listeners where appropriate, and only process stories and voices you have permission to use.
+Stories are saved locally under `stories/<slug>-<hash>/`:
 
-Teller is released under the **MIT License**. Optional models and runtimes retain their respective licenses.
+```text
+stories/example-story-0abd4a94/
+├── story.txt              # Original untouched source text
+├── manifest.json          # Story metadata and unique identifier
+├── analysis.json          # Character list and dialogue assignments
+├── characters.json        # Character voice mapping mirror
+├── segments.json          # Timestamped segment list
+└── audio/                 # Exact-phrase deterministic audio cache
+    └── <hash>.wav         # Synthesized speech cache files
+```
+
+The audio cache key is a SHA-256 hash derived from the exact segment text, TTS provider, model, voice ID, emotion style, speed, and language. Re-playing, re-opening, or re-rendering never re-synthesizes unchanged lines.
+
+---
+
+## Documentation Links
+
+- [Architecture Guide](docs/ARCHITECTURE.md): Technical deep dive into sidecar communication, audio streaming, and data structures.
+- [Contributing Guide](CONTRIBUTING.md): Environment setup, coding conventions, and pull request workflow.
+- [Agent Guidelines](AGENTS.md): Architectural rules, contracts, and invariants for AI agents working in this repository.
+
+---
+
+## Responsible Use & License
+
+Generated voices are synthetic. Always disclose the synthetic nature of generated audio where required, and ensure you possess appropriate rights to the texts and voices you process.
+
+Teller is released under the [MIT License](LICENSE). Optional model weights and third-party libraries maintain their respective licenses.

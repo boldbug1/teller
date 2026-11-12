@@ -59,12 +59,22 @@ def _validate_result(
         extra = sorted(set(assigned) - expected)
         raise TaggingError(f"Assignment IDs do not match; missing={missing}, extra={extra}")
 
+    # Normalize character refs if LLM omitted 'new_' prefix for new characters
+    ref_map: dict[str, str] = {}
+    for observation in result.characters:
+        if observation.ref not in existing_ids and not observation.ref.startswith("new_"):
+            new_ref = f"new_{observation.ref}"
+            ref_map[observation.ref] = new_ref
+            observation.ref = new_ref
+
+    if ref_map:
+        for assignment in result.assignments:
+            if assignment.speaker_ref in ref_map:
+                assignment.speaker_ref = ref_map[assignment.speaker_ref]
+
     observation_refs = [observation.ref for observation in result.characters]
     if len(observation_refs) != len(set(observation_refs)):
         raise TaggingError("Character observation refs must be unique")
-    for observation in result.characters:
-        if observation.ref not in existing_ids and not observation.ref.startswith("new_"):
-            raise TaggingError(f"New character ref must start with 'new_': {observation.ref}")
 
     allowed = existing_ids | set(observation_refs) | {NARRATOR_ID}
     unknown = sorted({assignment.speaker_ref for assignment in result.assignments} - allowed)
@@ -146,8 +156,15 @@ def heuristic_tag(
     pat_pronoun_before = re.compile(rf"\b(he|she)\s+{speech_verbs}", re.IGNORECASE)
 
     stop_words = {"and", "the", "other", "all", "one", "then", "so", "but", "well", "now", "there", "here"}
+    speech_adverbs = {
+        "gently", "quietly", "softly", "slowly", "loudly", "angrily", "happily",
+        "sadly", "coldly", "wearily", "triumphantly", "calmly", "nervously",
+        "sharply", "suddenly", "grimly", "eagerly", "proudly", "bitterly",
+        "crossly", "politely", "rudely", "sleepily", "feebly", "hastily",
+    }
 
-    has_monkeys_paw = any(w in source_text.lower() for w in ("white", "paw", "herbert", "morris"))
+    lower_source = source_text.lower()
+    has_monkeys_paw = any(w in lower_source for w in ("monkey's paw", "monkeys paw", "laburnum villa"))
 
     raw_speakers: dict[str, str] = {}
     conversation_pair: list[str] = []
@@ -155,8 +172,12 @@ def heuristic_tag(
     last_female: str = "Mrs. White" if has_monkeys_paw else ""
 
     def canonical_name(name: str) -> str:
-        lower = name.lower().strip()
-        if lower in stop_words or len(lower) < 2 or (" " in lower and any(w in stop_words for w in lower.split())):
+        words = name.strip().split()
+        while words and words[-1].lower() in speech_adverbs:
+            words.pop()
+        clean = " ".join(words).strip()
+        lower = clean.lower()
+        if not lower or lower in stop_words or len(lower) < 2 or (" " in lower and any(w in stop_words for w in lower.split())):
             return ""
         if lower in ("he", "him", "his"):
             return last_male or "Character 1"
@@ -173,7 +194,7 @@ def heuristic_tag(
                 return "Sergeant-Major Morris"
             if "stranger" in lower or "visitor" in lower or "maw" in lower:
                 return "Visitor"
-        return name.title()
+        return clean.title()
 
     for i, unit in enumerate(units):
         if unit.kind == "dialogue":
@@ -252,6 +273,7 @@ class StoryTagger:
         self.provider = provider
         self.max_chunk_chars = max_chunk_chars
         self.retries = retries
+        self.last_errors: list[str] = []
 
     async def _tag_chunk(
         self,
@@ -281,6 +303,7 @@ class StoryTagger:
                 return result
             except (ValidationError, ValueError, RuntimeError) as error:
                 errors.append(f"attempt {attempt + 1}: {error}")
+        self.last_errors = errors
         return None
 
     async def tag(
@@ -318,9 +341,11 @@ class StoryTagger:
                 speakers[assignment.unit_id] = (speaker_id, assignment.emotion)
                 registry.mark_seen(speaker_id, chunk.index)
 
-        # If LLM failed on every single chunk (e.g. rate limit / quota exhaustion),
-        # use heuristic tagger so dialogue is properly broken down into voices instead of dumped into Narrator!
+        # If LLM failed on every single chunk, surface the error instead of silently falling back
         if failed_chunks == total_chunks and total_chunks > 0:
+            if getattr(self, "last_errors", None):
+                last_err = self.last_errors[-1]
+                raise RuntimeError(f"LLM dialogue attribution failed: {last_err}")
             if progress_callback:
                 progress_callback(total_chunks, total_chunks, "Dialogue attributed via rule-based engine")
             return heuristic_tag(source_text, characters)
@@ -328,4 +353,7 @@ class StoryTagger:
         if progress_callback:
             progress_callback(total_chunks, total_chunks, "Finalizing character assignments")
 
-        return build_segments(source_text, units, speakers), registry.all()
+        segments = build_segments(source_text, units, speakers)
+        used_speakers = {s.speaker_id for s in segments} | {NARRATOR_ID}
+        active_characters = [c for c in registry.all() if c.id in used_speakers]
+        return segments, active_characters

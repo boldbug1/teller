@@ -33,8 +33,8 @@ def create_llm(config: AppConfig) -> LLMProvider | None:
             )
         model = (
             config.llm.model
-            if config.llm.model and config.llm.model != "gemini-3.8-flash"
-            else "llama-3.3-70b-versatile"
+            if config.llm.model and config.llm.model not in ("gemini-3.8-flash", "llama-3.3-70b-versatile", "llama-3.1-8b-instant")
+            else "openai/gpt-oss-120b"
         )
         return GroqLLM(api_key, model)
     if config.llm.provider == "ollama":

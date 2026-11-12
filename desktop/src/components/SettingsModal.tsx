@@ -18,9 +18,10 @@ const GEMINI_LLM_MODELS = [
 ];
 
 const GROQ_LLM_MODELS = [
-  { value: "llama-3.3-70b-versatile", label: "llama-3.3-70b-versatile (Recommended)" },
-  { value: "llama-3.1-8b-instant", label: "llama-3.1-8b-instant (Fastest)" },
-  { value: "mixtral-8x7b-32768", label: "mixtral-8x7b-32768 (32k Context)" },
+  { value: "openai/gpt-oss-120b", label: "GPT-OSS 120B (Recommended - Most Accurate)" },
+  { value: "qwen/qwen3.8-27b", label: "Qwen 3.8 27B (High Speed & Accurate)" },
+  { value: "openai/gpt-oss-20b", label: "GPT-OSS 20B (Fastest)" },
+  { value: "llama-3.3-70b-versatile", label: "llama-3.3-70b-versatile" },
 ];
 
 const OLLAMA_DEFAULT_MODELS = [
@@ -327,7 +328,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   const defModel = prov === "gemini"
                     ? "gemini-3.8-flash"
                     : prov === "groq"
-                    ? "llama-3.3-70b-versatile"
+                    ? "openai/gpt-oss-120b"
                     : prov === "rule_based"
                     ? "builtin"
                     : (setupStatus?.ollama_models?.[0] || "llama3.2");

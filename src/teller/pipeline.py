@@ -59,7 +59,7 @@ class TellerEngine:
             retries=self.config.llm.retries,
         )
         source = self.store.story_text(project)
-        prior_characters = existing[1] if existing else None
+        prior_characters = existing[1] if (existing and not force) else None
         if is_cancelled and is_cancelled():
             raise asyncio.CancelledError()
         segments, characters = await tagger.tag(
