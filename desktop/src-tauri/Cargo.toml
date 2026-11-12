@@ -2,7 +2,7 @@
 name = "teller-desktop"
 version = "0.1.0"
 description = "Teller - Multi-voice story player"
-authors = ["Teller contributors"]
+authors = ["boldbug <boldbug9@gmail.com>"]
 edition = "2021"
 
 [lib]

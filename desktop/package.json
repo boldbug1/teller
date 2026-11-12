@@ -1,5 +1,6 @@
 {
   "name": "teller-desktop",
+  "author": "boldbug <boldbug9@gmail.com>",
   "private": true,
   "version": "0.1.0",
   "type": "module",
