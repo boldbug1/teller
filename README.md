@@ -1,9 +1,23 @@
+<div align="center">
+
+<img src="docs/images/logo.svg" alt="Teller Logo" width="128" height="128" />
+
 # Teller
 
-![Teller Banner](docs/images/thumbnail.png)
+**Transform plain-text stories, books, and scripts into multi-voice audio dramas.**
 
-> Transform plain-text stories, books, and scripts into multi-voice audio dramas.  
-> Teller parses narration and dialogue, maintains a persistent character cast, assigns distinct voices, synthesizes speech ahead of playback, and exports stitched master audiobooks.
+Teller parses narration and dialogue, maintains a persistent character cast, assigns distinct voices, synthesizes speech ahead of playback, and exports stitched master audiobooks.
+
+[![Platform](https://img.shields.io/badge/Platform-Windows%20x64-0078D6?logo=windows&logoColor=white)](https://microsoft.com/windows)
+[![Version](https://img.shields.io/badge/Version-0.1.0-C2562B)](pyproject.toml)
+[![License](https://img.shields.io/badge/License-MIT-6B7F5E)](LICENSE)
+[![Tauri](https://img.shields.io/badge/Tauri-v2-24C8D8?logo=tauri&logoColor=white)](desktop/src-tauri)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](desktop/package.json)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](pyproject.toml)
+[![TTS Engines](https://img.shields.io/badge/TTS-Kokoro%20%7C%20ElevenLabs-E9A93A)](docs/ARCHITECTURE.md#5-provider-extension-system)
+[![LLM Tagging](https://img.shields.io/badge/LLM-Groq%20%7C%20Gemini%20%7C%20Ollama-4A5568)](docs/ARCHITECTURE.md#5-provider-extension-system)
+
+</div>
 
 ---
 
