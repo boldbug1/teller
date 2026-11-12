@@ -30,13 +30,8 @@ Teller turns any story into a full-cast performance. Whether running locally or 
 ## Screenshots & Demo
 
 ### Stage Performance
-![Teller Paper Theatre Showcase](docs/images/teller-showcase.jpg)
-*Synchronized speech playback, dialogue stream, live audio transport, and cast character management.*
-
-### Video Demo
-<video src="docs/images/Teller_Full_Uncropped.mp4" controls="controls" width="100%"></video>
-
-> Download or watch the full resolution demo: [Teller_Full_Uncropped.mp4](docs/images/Teller_Full_Uncropped.mp4)
+[![Teller Paper Theatre Showcase](docs/images/teller-showcase.jpg)](https://github.com/boldbug1/teller/blob/main/docs/images/Teller_Full_Uncropped.mp4)
+*Click the image above to open and play the full demo video, or view the [direct video file](https://github.com/boldbug1/teller/blob/main/docs/images/Teller_Full_Uncropped.mp4).*
 
 ---
 
