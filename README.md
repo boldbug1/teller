@@ -16,6 +16,7 @@ Teller parses narration and dialogue, maintains a persistent character cast, ass
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![TTS Engines](https://img.shields.io/badge/TTS-Kokoro%20%7C%20ElevenLabs-E9A93A)](docs/ARCHITECTURE.md#5-provider-extension-system)
 [![LLM Tagging](https://img.shields.io/badge/LLM-Groq%20%7C%20Gemini%20%7C%20Ollama-4A5568)](docs/ARCHITECTURE.md#5-provider-extension-system)
+[![YouTube Demo](https://img.shields.io/badge/YouTube-Watch%20Demo-FF0000?logo=youtube&logoColor=white)](https://youtu.be/nK0Vyansaio)
 
 </div>
 
@@ -30,8 +31,9 @@ Teller turns any story into a full-cast performance. Whether running locally or 
 ## Screenshots & Demo
 
 ### Stage Performance
-[![Teller Paper Theatre Showcase](docs/images/teller-showcase.jpg)](https://github.com/boldbug1/teller/blob/main/docs/images/Teller_Full_Uncropped.mp4)
-*Click the image above to open and play the full demo video, or view the [direct video file](https://github.com/boldbug1/teller/blob/main/docs/images/Teller_Full_Uncropped.mp4).*
+[![Watch the Teller Demo on YouTube](docs/images/teller-showcase.jpg)](https://youtu.be/nK0Vyansaio)
+
+*Click the image above to watch the full performance demo on [YouTube (youtu.be/nK0Vyansaio)](https://youtu.be/nK0Vyansaio).*
 
 ---
 
