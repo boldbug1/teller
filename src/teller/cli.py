@@ -223,6 +223,19 @@ def doctor() -> None:
             checks.append(("Gemini LLM SDK", True, "available"))
         except (RuntimeError, ImportError) as error:
             checks.append(("Gemini LLM SDK", False, str(error)))
+    elif config.llm.provider == "groq":
+        env_var = (
+            config.llm.api_key_env
+            if config.llm.api_key_env and config.llm.api_key_env != "GEMINI_API_KEY"
+            else "GROQ_API_KEY"
+        )
+        present = bool(get_api_key("groq", env_var))
+        checks.append(("Groq API key", present, env_var))
+        try:
+            create_llm(config)
+            checks.append(("Groq LLM SDK", True, f"model: {config.llm.model}"))
+        except (RuntimeError, ImportError) as error:
+            checks.append(("Groq LLM SDK", False, str(error)))
     elif config.llm.provider == "ollama":
         try:
             from ollama import Client
@@ -257,12 +270,11 @@ def doctor() -> None:
         checks.append(("Kokoro model", model_ok, str(model_path)))
         checks.append(("Kokoro voices", voices_ok, str(voices_path)))
         try:
-            import kokoro_onnx  # noqa: F401
-
-            create_tts(config)
-            checks.append(("Kokoro SDK", True, "available"))
-        except (RuntimeError, ImportError) as error:
-            checks.append(("Kokoro SDK", False, str(error)))
+            provider = create_tts(config)
+            voices = asyncio.run(provider.list_voices())
+            checks.append(("Kokoro runtime", bool(voices), f"{len(voices)} voices available"))
+        except (RuntimeError, ImportError, OSError, ValueError) as error:
+            checks.append(("Kokoro runtime", False, str(error)))
     elif config.tts.provider == "elevenlabs":
         env_var = (
             config.tts.api_key_env

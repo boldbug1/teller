@@ -31,6 +31,23 @@ _TRAITS = {
 }
 
 
+def validate_kokoro_runtime() -> None:
+    try:
+        import kokoro_onnx
+        from espeakng_loader import get_data_path, get_library_path
+    except Exception as error:
+        raise RuntimeError(f"Kokoro runtime is incomplete: {error}") from error
+
+    required_paths = [
+        Path(kokoro_onnx.__file__).with_name("config.json"),
+        Path(get_library_path()),
+        Path(get_data_path()),
+    ]
+    missing = [str(path) for path in required_paths if not path.exists()]
+    if missing:
+        raise RuntimeError(f"Kokoro runtime files are missing: {', '.join(missing)}")
+
+
 class KokoroTTS:
     provider_id = "kokoro"
 
@@ -44,6 +61,7 @@ class KokoroTTS:
     ):
         if not model_path.exists() or not voices_path.exists():
             raise RuntimeError("Kokoro model assets are missing; run: teller setup")
+        validate_kokoro_runtime()
         self.model_id = model
         self.model_path = model_path
         self.voices_path = voices_path
@@ -53,13 +71,14 @@ class KokoroTTS:
 
     def _get_engine(self) -> object:
         if self._engine is None:
-            try:
-                from kokoro_onnx import Kokoro
-            except ImportError as error:  # pragma: no cover - optional dependency
-                raise RuntimeError(
-                    'Install local support with: pip install "teller-story[local]"'
-                ) from error
-            self._engine = Kokoro(str(self.model_path), str(self.voices_path))
+            with self._lock:
+                if self._engine is None:
+                    try:
+                        from kokoro_onnx import Kokoro
+
+                        self._engine = Kokoro(str(self.model_path), str(self.voices_path))
+                    except Exception as error:
+                        raise RuntimeError(f"Kokoro failed to initialize: {error}") from error
         return self._engine
 
     def _voices(self) -> list[Voice]:

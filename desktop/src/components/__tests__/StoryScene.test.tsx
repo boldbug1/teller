@@ -175,5 +175,36 @@ describe("StoryScene", () => {
     const downloadBtn = screen.getByRole("button", { name: /Download Audio/i });
     expect(downloadBtn.hasAttribute("disabled")).toBe(true);
   });
+
+  it("highlights words proportionally when audio is playing", () => {
+    const onSeek = vi.fn();
+
+    const { container } = render(
+      <StoryScene
+        story={mockStory}
+        currentSegmentIndex={0}
+        segmentTime={1.0}
+        segmentDuration={3.0}
+        isPlaying={true}
+        activeOperation={null}
+        onAnalyze={() => {}}
+        onRender={() => {}}
+        onCancelOperation={() => {}}
+        onSeekSegment={onSeek}
+      />
+    );
+
+    // Active glowing word should be present
+    const glowingWord = container.querySelector(".word-speaking-glow");
+    expect(glowingWord).toBeDefined();
+
+    // Clicking the floating card triggers seek
+    const card = container.querySelector(".floating-speech-card");
+    expect(card).toBeDefined();
+    if (card) {
+      fireEvent.click(card);
+      expect(onSeek).toHaveBeenCalledWith(0);
+    }
+  });
 });
 

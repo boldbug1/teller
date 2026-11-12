@@ -1,10 +1,20 @@
-import React from "react";
-import { OperationEvent, Segment, StoryDetail } from "../types";
-import { AnalyzeIcon, DownloadIcon, MicIcon, WarningIcon } from "./Icons";
+import React, { createContext, memo, useContext, useEffect, useMemo, useRef } from "react";
+import { Character, OperationEvent, Segment, StoryDetail } from "../types";
+import {
+  DownloadIcon,
+  EqualizerBars,
+  MicIcon,
+  SparklesIcon,
+  WarningIcon,
+} from "./Icons";
 
 interface StorySceneProps {
   story: StoryDetail | null;
   currentSegmentIndex: number;
+  segmentTime?: number;
+  segmentDuration?: number;
+  isPlaying?: boolean;
+  isLoading?: boolean;
   activeOperation: OperationEvent | null;
   operationError?: string | null;
   onDismissError?: () => void;
@@ -14,11 +24,135 @@ interface StorySceneProps {
   onCancelOperation: () => void;
   onDownload?: () => void;
   isDownloading?: boolean;
+  onSeekSegment?: (index: number) => void;
+  onAddStory?: () => void;
+}
+
+function renderDialogueWords(
+  text: string,
+  isActive: boolean,
+  isPlaying: boolean,
+  segmentTime = 0,
+  segmentDuration = 0
+) {
+  if (!isActive || !isPlaying || segmentDuration <= 0) {
+    return <span className="dialogue-text-static">{text}</span>;
+  }
+
+  const tokens = text.split(/(\s+)/);
+  const totalChars = tokens.reduce((total, token) => total + (token.trim() ? token.length : 0), 0);
+  if (totalChars === 0) return <span>{text}</span>;
+
+  const currentTargetChar = Math.min(0.999, Math.max(0, segmentTime / segmentDuration)) * totalChars;
+  let accumulatedChars = 0;
+
+  return (
+    <span className="dialogue-karaoke-stream">
+      {tokens.map((token, index) => {
+        if (!token.trim()) return <span key={index}>{token}</span>;
+
+        const wordStart = accumulatedChars;
+        const wordEnd = accumulatedChars + token.length;
+        accumulatedChars = wordEnd;
+        const className = currentTargetChar >= wordEnd
+          ? "karaoke-word word-spoken"
+          : currentTargetChar >= wordStart
+            ? "karaoke-word word-speaking-glow"
+            : "karaoke-word word-upcoming";
+
+        return <span key={index} className={className}>{token}</span>;
+      })}
+    </span>
+  );
+}
+
+interface SegmentLineProps {
+  segment: Segment;
+  speaker?: Character;
+  isActive: boolean;
+  isPlaying: boolean;
+  onSeekSegment?: (index: number) => void;
+}
+
+const PlaybackTimingContext = createContext({ segmentTime: 0, segmentDuration: 0, isPlaying: false });
+
+function ActiveDialogueWords({ text }: { text: string }) {
+  const timing = useContext(PlaybackTimingContext);
+  return renderDialogueWords(
+    text,
+    true,
+    timing.isPlaying,
+    timing.segmentTime,
+    timing.segmentDuration
+  );
+}
+
+const SegmentLine = memo(function SegmentLine({
+  segment,
+  speaker,
+  isActive,
+  isPlaying,
+  onSeekSegment,
+}: SegmentLineProps) {
+  const speakerName = speaker?.name || segment.speaker_id;
+  const seekToLine = () => onSeekSegment?.(segment.index);
+
+  return (
+    <article
+      className={`floating-speech-card script-line ${isActive ? "is-active-card" : ""}`}
+      aria-current={isActive ? "true" : undefined}
+      aria-label={`Line ${segment.index + 1}, ${speakerName}`}
+      tabIndex={onSeekSegment ? 0 : undefined}
+      onClick={seekToLine}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          seekToLine();
+        }
+      }}
+      title={`Jump to line ${segment.index + 1}`}
+    >
+      <div className="script-line-gutter" aria-hidden="true">
+        <span>{String(segment.index + 1).padStart(2, "0")}</span>
+        <i />
+      </div>
+      <div className="script-line-body">
+        <div className="speech-meta-row">
+          <span className="speech-speaker-label">{speakerName}</span>
+          {segment.emotion ? <span className="speech-emotion-pill">{segment.emotion}</span> : null}
+          {isActive && isPlaying ? <EqualizerBars active color="var(--rust)" /> : null}
+        </div>
+        <p className="speech-paragraph-content">
+          {isActive
+            ? <ActiveDialogueWords text={segment.text} />
+            : <span className="dialogue-text-static">{segment.text}</span>}
+        </p>
+      </div>
+    </article>
+  );
+});
+
+function StageArtwork({ state = "idle" }: { state?: "idle" | "working" | "ready" }) {
+  return (
+    <div className={`stage-art-proscenium scene-${state}`} aria-hidden="true">
+      <div className="stage-sun" />
+      <div className="stage-bird bird-a" />
+      <div className="stage-bird bird-b" />
+      <div className="stage-hill hill-one" />
+      <div className="stage-hill hill-two" />
+      <div className="stage-curtain curtain-left" />
+      <div className="stage-curtain curtain-right" />
+    </div>
+  );
 }
 
 export const StoryScene: React.FC<StorySceneProps> = ({
   story,
   currentSegmentIndex,
+  segmentTime = 0,
+  segmentDuration = 0,
+  isPlaying = false,
+  isLoading: _isLoading = false,
   activeOperation,
   operationError,
   onDismissError,
@@ -28,236 +162,214 @@ export const StoryScene: React.FC<StorySceneProps> = ({
   onCancelOperation,
   onDownload,
   isDownloading = false,
+  onSeekSegment,
+  onAddStory,
 }) => {
+  const streamRef = useRef<HTMLDivElement>(null);
+  const characterById = useMemo(
+    () => new Map(story?.characters.map((character) => [character.id, character]) || []),
+    [story?.characters]
+  );
+  const segmentLines = useMemo(
+    () => (story?.segments || []).map((segment) => {
+      const isActive = segment.index === currentSegmentIndex;
+      return (
+        <SegmentLine
+          key={segment.index}
+          segment={segment}
+          speaker={characterById.get(segment.speaker_id)}
+          isActive={isActive}
+          isPlaying={isActive && isPlaying}
+          onSeekSegment={onSeekSegment}
+        />
+      );
+    }),
+    [characterById, currentSegmentIndex, isPlaying, onSeekSegment, story?.segments]
+  );
+
+  useEffect(() => {
+    const activeLine = streamRef.current?.querySelector<HTMLElement>("[aria-current='true']");
+    if (!activeLine || typeof activeLine.scrollIntoView !== "function") return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    activeLine.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+  }, [currentSegmentIndex]);
+
   if (!story) {
     return (
       <main className="stage-center" aria-label="Main Stage">
-        <div className="theatre-frame" style={{ textAlign: "center", padding: "60px 20px" }}>
-          <h2 style={{ fontSize: "1.8rem", marginBottom: "12px" }}>The Stage Awaits</h2>
-          <p style={{ color: "#666", maxWidth: "420px", margin: "0 auto 20px auto", lineHeight: 1.6 }}>
-            Select an existing story from the library on the left, or add a new story to begin casting and performance.
-          </p>
-        </div>
+        <article className="theatre-frame empty-stage">
+          <button
+            type="button"
+            className="giant-import-zone"
+            onClick={onAddStory}
+            aria-label="Import story"
+            title="Import or create a story"
+          >
+            <span className="giant-plus-icon">+</span>
+            <span className="giant-import-label">Import Story</span>
+            <span className="giant-import-subtext">
+              Click to choose a story file or paste text
+              <span className="giant-import-formats">Supports .txt, .md, .pdf, .docx</span>
+            </span>
+          </button>
+          {operationError ? (
+            <div className="empty-stage-error" role="alert">
+              <WarningIcon size={17} />
+              <span>{operationError}</span>
+              {onOpenSettings ? (
+                <button type="button" className="text-action-btn" onClick={onOpenSettings}>Open Settings</button>
+              ) : null}
+              {onDismissError ? (
+                <button type="button" className="text-action-btn" onClick={onDismissError}>Dismiss</button>
+              ) : null}
+            </div>
+          ) : null}
+        </article>
       </main>
     );
   }
 
-  const currentSegment: Segment | undefined = story.segments[currentSegmentIndex];
-  const charMap = new Map(story.characters.map((c) => [c.id, c]));
-  const speaker = currentSegment ? charMap.get(currentSegment.speaker_id) : undefined;
-  const isNarrator = currentSegment?.speaker_id === "narrator";
-
-  const isOpActive = activeOperation && (activeOperation.state === "running" || activeOperation.state === "pending");
+  const isOpActive = Boolean(
+    activeOperation && (activeOperation.state === "running" || activeOperation.state === "pending")
+  );
   const progressPercent = activeOperation && activeOperation.total > 0
     ? Math.round((activeOperation.completed / activeOperation.total) * 100)
     : 0;
+  const operationLabel = activeOperation?.kind === "analyze"
+    ? "Analyzing story"
+    : activeOperation?.kind === "render"
+      ? "Generating audio"
+      : "Processing";
 
   return (
     <main className="stage-center" aria-label="Performance Stage">
-      <div className="theatre-frame">
-        {/* Proscenium Arch Backdrop Art */}
-        <div className="stage-art-proscenium">
-          <svg width="100%" height="100%" viewBox="0 0 600 120" preserveAspectRatio="none">
-            {/* Hand-drawn curtain valance */}
-            <path
-              d="M0 0 C 100 60, 200 10, 300 50 C 400 10, 500 60, 600 0 L 600 20 C 500 80, 400 30, 300 70 C 200 30, 100 80, 0 20 Z"
-              fill="var(--rust)"
-              opacity="0.85"
-            />
-            <path
-              d="M0 0 L 600 0 L 600 15 L 0 15 Z"
-              fill="var(--gold)"
-              opacity="0.9"
-            />
-          </svg>
-        </div>
+      <article className="theatre-frame story-page">
+        <StageArtwork state={isOpActive ? "working" : story.rendered_count > 0 ? "ready" : "idle"} />
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px" }}>
-          <div>
+        <div className="stage-header-toolbar">
+          <div className="stage-title-block">
             <h2 className="stage-title">{story.manifest.title}</h2>
             <div className="stage-subtitle">
-              {story.segments.length > 0
-                ? `${story.segments.length} dialogue & narration segments • ${story.characters.length} characters • ${story.rendered_count} voiced`
-                : "Imported story text • Needs attribution analysis"}
+              <span>{story.segments.length} lines</span>
+              <i aria-hidden="true" />
+              <span>{story.characters.length} characters</span>
+              <i aria-hidden="true" />
+              <span className={story.rendered_count > 0 ? "is-ready" : ""}>
+                {story.rendered_count}/{story.total_count || story.segments.length} generated
+              </span>
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div className="stage-actions-group" aria-label="Story actions">
             <button
-              className="btn-secondary"
+              type="button"
+              className="icon-action-btn"
               onClick={() => onAnalyze(false)}
-              disabled={Boolean(isOpActive)}
-              title="Tag characters, dialogue, and emotion"
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              disabled={isOpActive}
+              title="Detect speakers, dialogue, and emotion"
             >
-              {isOpActive && activeOperation?.kind === "analyze" ? (
-                <>
-                  <span className="spinner-indicator" /> Analyzing Story...
-                </>
-              ) : (
-                <>
-                  <AnalyzeIcon size={16} /> {story.segments.length > 0 ? "Re-Analyze" : "Analyze Story"}
-                </>
-              )}
+              <SparklesIcon size={15} />
+              <span>{story.segments.length > 0 ? "Re-Analyze" : "Analyze"}</span>
             </button>
             <button
-              className="btn-primary"
+              type="button"
+              className="icon-action-btn primary"
               onClick={onRender}
-              disabled={Boolean(isOpActive || story.segments.length === 0)}
-              title="Synthesize all dialogue into audio"
-              style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              disabled={isOpActive || story.segments.length === 0}
+              title="Synthesize the story with its assigned voices"
             >
-              {isOpActive && activeOperation?.kind === "render" ? (
-                <>
-                  <span className="spinner-indicator" style={{ borderTopColor: "#fff" }} /> Rendering Voices...
-                </>
-              ) : (
-                <>
-                  <MicIcon size={16} /> Render Voices
-                </>
-              )}
+              <MicIcon size={15} />
+              <span>{activeOperation?.kind === "render" && isOpActive ? "Recording..." : "Render Voices"}</span>
             </button>
-            {onDownload && (
+            {onDownload ? (
               <button
-                className="btn-secondary"
+                type="button"
+                className="icon-action-btn icon-only"
                 onClick={onDownload}
-                disabled={Boolean(isOpActive || story.rendered_count === 0 || isDownloading)}
-                title={
-                  story.rendered_count > 0
-                    ? "Download full stitched story audio (WAV)"
-                    : "Render voices first to download story audio"
-                }
-                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                disabled={isOpActive || story.rendered_count === 0 || isDownloading}
+                title={story.rendered_count > 0 ? "Export story audio" : "Render voices before exporting"}
+                aria-label="Download Audio"
               >
-                {isDownloading ? (
-                  <>
-                    <span className="spinner-indicator" /> Exporting...
-                  </>
-                ) : (
-                  <>
-                    <DownloadIcon size={16} /> Download Audio
-                  </>
-                )}
+                <DownloadIcon size={16} />
+                <span className="sr-only">Download Audio</span>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 
-        {/* Operation Progress Banner */}
-        {isOpActive && (
-          <div className="operation-banner" role="status">
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: "220px" }}>
-              <span className="spinner-indicator" />
-              <span style={{ fontWeight: "bold", fontSize: "0.85rem", textTransform: "capitalize" }}>
-                {activeOperation?.kind === "analyze" ? "Analyzing" : activeOperation?.kind}:
-              </span>
-              <span style={{ fontSize: "0.85rem" }}>
-                {activeOperation?.message_code ? activeOperation.message_code.replace(/_/g, " ") : "Processing..."}
-              </span>
+        {isOpActive ? (
+          <div className="operation-banner" role="status" aria-live="polite">
+            <span className="spinner-indicator" aria-hidden="true" />
+            <div className="operation-copy">
+              <strong>{operationLabel}</strong>
+              <span>{activeOperation?.message_code?.replace(/_/g, " ") || "Working..."}</span>
             </div>
-            <div className="progress-bar-container">
-              <div
-                className="progress-fill"
-                style={{
-                  width: `${progressPercent > 0 ? progressPercent : 15}%`,
-                  transition: "width 0.3s ease",
-                }}
-              />
-            </div>
-            <span style={{ fontSize: "0.85rem", fontWeight: "bold", minWidth: "45px" }}>
-              {activeOperation && activeOperation.total > 0
-                ? `${activeOperation.completed}/${activeOperation.total}`
-                : "..."}
-            </span>
-            <button
-              className="btn-secondary"
-              style={{ padding: "3px 8px", fontSize: "0.8rem", marginLeft: "10px" }}
-              onClick={onCancelOperation}
+            <div
+              className="progress-bar-container"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={activeOperation?.total || 1}
+              aria-valuenow={activeOperation?.completed || 0}
             >
-              Cancel
-            </button>
+              <div className="progress-fill" style={{ width: `${progressPercent || 8}%` }} />
+            </div>
+            <strong className="operation-count">
+              {activeOperation?.total ? `${activeOperation.completed}/${activeOperation.total}` : "..."}
+            </strong>
+            <button type="button" className="text-action-btn" onClick={onCancelOperation}>Cancel</button>
           </div>
-        )}
+        ) : null}
 
-        {/* Operation Error Banner */}
-        {operationError && (
+        {operationError ? (
           <div className="operation-error-banner" role="alert">
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <WarningIcon size={18} style={{ color: "#721c24", flexShrink: 0 }} />
-              <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-                {operationError}
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              {onOpenSettings && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ padding: "4px 10px", fontSize: "0.8rem", background: "#fff" }}
-                  onClick={onOpenSettings}
-                >
-                  Open Settings
-                </button>
-              )}
-              {onDismissError && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  style={{ padding: "4px 8px", fontSize: "0.8rem", background: "#fff" }}
-                  onClick={onDismissError}
-                >
-                  ✕ Dismiss
-                </button>
-              )}
+            <WarningIcon size={18} />
+            <span>{operationError}</span>
+            <div className="banner-actions">
+              {onOpenSettings ? (
+                <button type="button" className="text-action-btn" onClick={onOpenSettings}>Open Settings</button>
+              ) : null}
+              {onDismissError ? (
+                <button type="button" className="text-action-btn" onClick={onDismissError}>Dismiss</button>
+              ) : null}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Reading Preview Box */}
-        <div className="reading-unit-box">
-          {currentSegment ? (
-            <div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                <span
-                  className="speaker-pill"
-                  style={{
-                    background: isNarrator ? "var(--paper-deep)" : "var(--gold)",
-                  }}
-                >
-                  {speaker?.name || currentSegment.speaker_id}
-                </span>
-                {currentSegment.emotion && (
-                  <span
-                    style={{
-                      fontFamily: "var(--font-sans)",
-                      fontSize: "0.75rem",
-                      fontStyle: "italic",
-                      color: "#666",
-                    }}
-                  >
-                    ({currentSegment.emotion})
-                  </span>
-                )}
-                <span
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "0.7rem",
-                    color: "#888",
-                    marginLeft: "auto",
-                  }}
-                >
-                  Segment {currentSegment.index + 1} of {story.segments.length}
-                </span>
+        {story.segments.length > 0 ? (
+          <section className="script-panel" aria-label="Story script">
+            <div className="script-panel-heading">
+              <div>
+                <span className="section-kicker">Script</span>
+                
               </div>
-              <p className="reading-text">"{currentSegment.text}"</p>
+              <span>Line {Math.min(currentSegmentIndex + 1, story.segments.length)} of {story.segments.length}</span>
             </div>
-          ) : (
-            <p style={{ color: "#777", margin: 0, fontStyle: "italic" }}>
-              Run "Analyze Story" to parse narration, characters, and spoken dialogue.
+            <PlaybackTimingContext.Provider value={{ segmentTime, segmentDuration, isPlaying }}>
+              <div className="floating-story-stream" ref={streamRef} role="feed" aria-label="Story dialogue stream">
+                {segmentLines}
+              </div>
+            </PlaybackTimingContext.Provider>
+          </section>
+        ) : (
+          <section className="manuscript-preview">
+            <h3>Ready to Analyze</h3>
+            <p className="preview-guide-text">
+              Detect the characters, spoken dialogue, and narrative emotions.
             </p>
-          )}
-        </div>
-      </div>
+            <div className="manuscript-excerpt">
+              {story.text.slice(0, 520)}{story.text.length > 520 ? "..." : ""}
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => onAnalyze(false)}
+              disabled={isOpActive}
+            >
+              <SparklesIcon size={16} /> Analyze Story
+            </button>
+          </section>
+        )}
+      </article>
     </main>
   );
 };

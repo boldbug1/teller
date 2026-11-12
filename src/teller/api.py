@@ -53,7 +53,7 @@ from teller.document import (
     extract_story_title,
     extract_text_from_file,
 )
-from teller.models import VoiceAssignment
+from teller.models import Character, Segment, StoryProject, VoiceAssignment
 from teller.operations import operations
 from teller.pipeline import TellerEngine
 from teller.providers.factory import create_llm, create_tts
@@ -91,6 +91,31 @@ def create_app(
     def get_store() -> StoryStore:
         cfg = get_current_config()
         return StoryStore(cfg.paths.stories_dir)
+
+    def count_rendered_segments(
+        project: StoryProject,
+        segments: list[Segment],
+        characters: list[Character],
+        cfg: AppConfig,
+    ) -> int:
+        cache = AudioCache(project.path / "audio")
+        characters_by_id = {character.id: character for character in characters}
+        rendered = 0
+        for segment in segments:
+            character = characters_by_id.get(segment.speaker_id)
+            if character is None or character.voice is None:
+                continue
+            key = audio_cache_key(
+                provider=character.voice.provider,
+                model=character.voice.model,
+                voice_id=character.voice.voice_id,
+                text=segment.text.strip(),
+                style=segment.emotion,
+                speed=cfg.tts.speed,
+                language=cfg.tts.language,
+            )
+            rendered += int(cache.has(key))
+        return rendered
 
     def verify_token(
         credentials: HTTPAuthorizationCredentials | None = Depends(security),  # noqa: B008
@@ -144,6 +169,15 @@ def create_app(
         model_path, voices_path = kokoro_asset_paths(cfg.paths.assets_dir)
         kokoro_model_ok = model_path.exists() and file_sha256(model_path) == KOKORO_MODEL_SHA256
         kokoro_voices_ok = voices_path.exists() and file_sha256(voices_path) == KOKORO_VOICES_SHA256
+        kokoro_runtime_ok = False
+        if kokoro_model_ok and kokoro_voices_ok:
+            try:
+                from teller.providers.tts_kokoro import validate_kokoro_runtime
+
+                validate_kokoro_runtime()
+                kokoro_runtime_ok = True
+            except Exception:
+                kokoro_runtime_ok = False
 
         audio_output_ok = False
         try:
@@ -161,7 +195,12 @@ def create_app(
         )
         tts_ready = (
             (cfg.tts.provider == "gemini" and gemini_key)
-            or (cfg.tts.provider == "kokoro" and kokoro_model_ok and kokoro_voices_ok)
+            or (
+                cfg.tts.provider == "kokoro"
+                and kokoro_model_ok
+                and kokoro_voices_ok
+                and kokoro_runtime_ok
+            )
             or (cfg.tts.provider == "elevenlabs" and elevenlabs_key)
         )
 
@@ -176,6 +215,7 @@ def create_app(
             ollama_model_available=ollama_model_available,
             kokoro_model_present=kokoro_model_ok,
             kokoro_voices_present=kokoro_voices_ok,
+            kokoro_runtime_available=kokoro_runtime_ok,
             audio_output_available=audio_output_ok,
             ready=bool(llm_ready and tts_ready),
         )
@@ -318,12 +358,17 @@ def create_app(
                 DoctorCheckItem(name="Kokoro voices", passed=voices_ok, details=str(voices_path))
             )
             try:
-                import kokoro_onnx  # noqa: F401
-
-                create_tts(cfg)
-                checks.append(DoctorCheckItem(name="Kokoro SDK", passed=True, details="available"))
+                tts = create_tts(cfg)
+                voices = asyncio.run(tts.list_voices())
+                checks.append(
+                    DoctorCheckItem(
+                        name="Kokoro runtime",
+                        passed=bool(voices),
+                        details=f"{len(voices)} voices available",
+                    )
+                )
             except Exception as e:
-                checks.append(DoctorCheckItem(name="Kokoro SDK", passed=False, details=str(e)))
+                checks.append(DoctorCheckItem(name="Kokoro runtime", passed=False, details=str(e)))
         elif cfg.tts.provider == "elevenlabs":
             env_var = (
                 cfg.tts.api_key_env
@@ -414,14 +459,14 @@ def create_app(
     @router.get("/v1/stories", response_model=list[StorySummary])
     def list_stories() -> list[StorySummary]:
         store = get_store()
+        cfg = get_current_config()
         projects = store.list_stories()
         summaries: list[StorySummary] = []
         for p in projects:
             analysis = store.load_analysis(p)
             segments = analysis[0] if analysis else []
             characters = analysis[1] if analysis else []
-            audio_dir = p.path / "audio"
-            rendered_count = len(list(audio_dir.glob("*.wav"))) if audio_dir.exists() else 0
+            rendered_count = count_rendered_segments(p, segments, characters, cfg)
 
             summaries.append(
                 StorySummary(
@@ -536,6 +581,7 @@ def create_app(
     @router.get("/v1/stories/{story_id}", response_model=StoryDetailResponse)
     def get_story(story_id: str) -> StoryDetailResponse:
         store = get_store()
+        cfg = get_current_config()
         try:
             project = store.find(story_id)
         except FileNotFoundError as err:
@@ -547,8 +593,7 @@ def create_app(
         analysis = store.load_analysis(project)
         segments = analysis[0] if analysis else []
         characters = analysis[1] if analysis else []
-        audio_dir = project.path / "audio"
-        rendered_count = len(list(audio_dir.glob("*.wav"))) if audio_dir.exists() else 0
+        rendered_count = count_rendered_segments(project, segments, characters, cfg)
 
         return StoryDetailResponse(
             manifest=project.manifest,
@@ -742,7 +787,13 @@ def create_app(
         cfg = get_current_config()
 
         async def _run_reassign() -> None:
-            await operations.update(op_id, state="running", message_code="reassigning_voices")
+            await operations.update(
+                op_id,
+                state="running",
+                completed=0,
+                total=len(analysis[1]),
+                message_code="reassigning_voices",
+            )
             try:
                 tts = create_tts(cfg)
                 engine = TellerEngine(cfg, tts=tts)

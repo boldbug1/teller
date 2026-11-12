@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import { SetupStatus } from "../types";
-import { CheckIcon, EyeIcon, EyeOffIcon, SettingsIcon, WarningIcon } from "./Icons";
+import { CheckIcon, CloseIcon, EyeIcon, EyeOffIcon, SettingsIcon, WarningIcon } from "./Icons";
+import { useDialog } from "./useDialog";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -11,15 +12,15 @@ interface SettingsModalProps {
 }
 
 const GEMINI_LLM_MODELS = [
-  { value: "gemini-3.8-flash", label: "gemini-3.8-flash (Recommended - fast & high quality)" },
+  { value: "gemini-3.8-flash", label: "gemini-3.8-flash (Recommended)" },
   { value: "gemini-2.5-flash", label: "gemini-2.5-flash (Standard)" },
   { value: "gemini-2.5-pro", label: "gemini-2.5-pro (In-depth analysis)" },
 ];
 
 const GROQ_LLM_MODELS = [
-  { value: "llama-3.3-70b-versatile", label: "llama-3.3-70b-versatile (Recommended - High Quality & Fast)" },
-  { value: "llama-3.1-8b-instant", label: "llama-3.1-8b-instant (Ultra Fast - Lightweight)" },
-  { value: "mixtral-8x7b-32768", label: "mixtral-8x7b-32768 (32k Context Window)" },
+  { value: "llama-3.3-70b-versatile", label: "llama-3.3-70b-versatile (Recommended)" },
+  { value: "llama-3.1-8b-instant", label: "llama-3.1-8b-instant (Fastest)" },
+  { value: "mixtral-8x7b-32768", label: "mixtral-8x7b-32768 (32k Context)" },
 ];
 
 const OLLAMA_DEFAULT_MODELS = [
@@ -31,9 +32,9 @@ const OLLAMA_DEFAULT_MODELS = [
 ];
 
 const ELEVENLABS_MODELS = [
-  { value: "eleven_multilingual_v2", label: "eleven_multilingual_v2 (Most Expressive - Recommended)" },
-  { value: "eleven_turbo_v2_5", label: "eleven_turbo_v2_5 (Low latency)" },
-  { value: "eleven_flash_v2_5", label: "eleven_flash_v2_5 (Ultra fast)" },
+  { value: "eleven_multilingual_v2", label: "eleven_multilingual_v2 (Recommended)" },
+  { value: "eleven_turbo_v2_5", label: "eleven_turbo_v2_5 (Low Latency)" },
+  { value: "eleven_flash_v2_5", label: "eleven_flash_v2_5 (Ultra Fast)" },
   { value: "eleven_multilingual_v1", label: "eleven_multilingual_v1 (Classic)" },
 ];
 
@@ -57,46 +58,135 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [customLlmModel, setCustomLlmModel] = useState(false);
   const [customTtsModel, setCustomTtsModel] = useState(false);
   const [msg, setMsg] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [savedKeys, setSavedKeys] = useState({ gemini: false, groq: false, elevenlabs: false });
+  const pollGenerationRef = useRef(0);
+  const dialogRef = useDialog(isOpen, onClose, !saving && !downloadingKokoro);
 
   useEffect(() => {
-    if (isOpen) {
-      api.getConfig().then((cfg) => {
-        setConfig(cfg);
-        // Detect if currently configured model is custom
-        if (cfg.llm.provider === "gemini" && !GEMINI_LLM_MODELS.some((m) => m.value === cfg.llm.model)) {
-          setCustomLlmModel(true);
-        }
-        if (cfg.tts.provider === "elevenlabs" && !ELEVENLABS_MODELS.some((m) => m.value === cfg.tts.model)) {
-          setCustomTtsModel(true);
-        }
-      }).catch(console.error);
+    if (!isOpen) {
+      pollGenerationRef.current += 1;
+      return;
     }
-  }, [isOpen]);
 
-  if (!isOpen || !config) return null;
+    let cancelled = false;
+    setConfig(null);
+    setLoadingConfig(true);
+    setLoadError(null);
+    setMsg(null);
+    setGeminiKey("");
+    setGroqKey("");
+    setElevenlabsKey("");
+    setShowGeminiKey(false);
+    setShowGroqKey(false);
+    setShowElevenlabsKey(false);
+    setDownloadingKokoro(false);
+    setKokoroProgress(null);
+    setSavedKeys({
+      gemini: Boolean(setupStatus?.gemini_key_present),
+      groq: Boolean(setupStatus?.groq_key_present),
+      elevenlabs: Boolean(setupStatus?.elevenlabs_key_present),
+    });
+
+    api.getConfig().then((cfg) => {
+      if (cancelled) return;
+        setConfig(cfg);
+        const knownLlmModels = cfg.llm.provider === "gemini"
+          ? GEMINI_LLM_MODELS.map((model) => model.value)
+          : cfg.llm.provider === "groq"
+            ? GROQ_LLM_MODELS.map((model) => model.value)
+            : [...OLLAMA_DEFAULT_MODELS, ...(setupStatus?.ollama_models || [])];
+        setCustomLlmModel(
+          cfg.llm.provider !== "rule_based" && !knownLlmModels.includes(cfg.llm.model)
+        );
+        setCustomTtsModel(
+          cfg.tts.provider === "elevenlabs" && !ELEVENLABS_MODELS.some((model) => model.value === cfg.tts.model)
+        );
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : "Settings could not be loaded.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingConfig(false);
+      });
+
+    return () => {
+      cancelled = true;
+      pollGenerationRef.current += 1;
+    };
+  }, [isOpen, loadAttempt]);
+
+  if (!isOpen) return null;
+
+  if (!config) {
+    return (
+      <div className="modal-overlay">
+        <div
+          ref={dialogRef}
+          className="modal-dialog settings-modal-dialog settings-loading-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="settings-title"
+          tabIndex={-1}
+        >
+          <div className="settings-header">
+            <div className="settings-header-title">
+              <SettingsIcon size={18} className="settings-header-icon" />
+              <h2 id="settings-title">Settings</h2>
+            </div>
+            <button type="button" className="settings-close-x" onClick={onClose} aria-label="Close settings">
+              <CloseIcon size={14} />
+            </button>
+          </div>
+          {loadingConfig ? (
+            <div className="settings-loading-state" role="status">
+              <span className="spinner-indicator" aria-hidden="true" />
+              <strong>Opening the control room</strong>
+              <span>Loading providers and local engine settings...</span>
+            </div>
+          ) : (
+            <div className="settings-loading-state" role="alert">
+              <WarningIcon size={22} />
+              <strong>Settings are unavailable</strong>
+              <span>{loadError || "The local service did not return its configuration."}</span>
+              <button type="button" className="btn-secondary" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Try Again</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const handleSaveConfig = async () => {
     setSaving(true);
     setMsg(null);
     try {
       await api.patchConfig(config);
-      let keySavedCount = 0;
-      if (geminiKey.trim()) {
-        await api.setSecret("gemini", geminiKey.trim());
-        keySavedCount++;
-      }
-      if (groqKey.trim()) {
-        await api.setSecret("groq", groqKey.trim());
-        keySavedCount++;
-      }
-      if (elevenlabsKey.trim()) {
-        await api.setSecret("elevenlabs", elevenlabsKey.trim());
-        keySavedCount++;
-      }
+      const secretUpdates = [
+        ["gemini", geminiKey.trim()],
+        ["groq", groqKey.trim()],
+        ["elevenlabs", elevenlabsKey.trim()],
+      ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+      await Promise.all(secretUpdates.map(([provider, key]) => api.setSecret(provider, key)));
+      const keySavedCount = secretUpdates.length;
+      setSavedKeys((current) => ({
+        ...current,
+        ...Object.fromEntries(secretUpdates.map(([provider]) => [provider, true])),
+      }));
+      setGeminiKey("");
+      setGroqKey("");
+      setElevenlabsKey("");
+      setShowGeminiKey(false);
+      setShowGroqKey(false);
+      setShowElevenlabsKey(false);
       onRefreshStatus();
       setMsg({
         text: keySavedCount > 0
-          ? `Settings & ${keySavedCount} API key${keySavedCount > 1 ? "s" : ""} saved successfully!`
+          ? `Settings & ${keySavedCount} key${keySavedCount > 1 ? "s" : ""} saved to Keychain!`
           : "Settings saved successfully!",
         type: "success",
       });
@@ -108,92 +198,139 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   const handleDownloadKokoro = async () => {
+    const generation = ++pollGenerationRef.current;
     setDownloadingKokoro(true);
     setKokoroProgress(0);
     setKokoroMessage("Initiating download...");
     try {
       const res = await api.downloadKokoroAssets();
       const opId = res.operation_id;
+      let consecutiveFailures = 0;
 
-      const interval = setInterval(async () => {
+      while (pollGenerationRef.current === generation) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        if (pollGenerationRef.current !== generation) return;
         try {
           const op = await api.getOperation(opId);
-          if (op) {
-            if (op.total > 0) {
-              const pct = Math.min(100, Math.round((op.completed / op.total) * 100));
-              setKokoroProgress(pct);
-            }
-            if (op.message_code) {
-              setKokoroMessage(op.message_code.replace(/_/g, " "));
-            }
-            if (op.state === "completed") {
-              clearInterval(interval);
-              setKokoroProgress(100);
-              setKokoroMessage("Kokoro voice assets ready!");
-              setDownloadingKokoro(false);
-              onRefreshStatus();
-              setMsg({ text: "Kokoro offline voice assets downloaded successfully!", type: "success" });
-            } else if (op.state === "failed") {
-              clearInterval(interval);
-              setDownloadingKokoro(false);
-              setKokoroProgress(null);
-              setMsg({ text: `Download failed: ${op.error || op.message_code}`, type: "error" });
-            }
+          consecutiveFailures = 0;
+          if (op.total > 0) {
+            setKokoroProgress(Math.min(100, Math.round((op.completed / op.total) * 100)));
+          }
+          if (op.message_code) setKokoroMessage(op.message_code.replace(/_/g, " "));
+          if (op.state === "completed") {
+            setKokoroProgress(100);
+            setKokoroMessage("Kokoro voice assets ready");
+            setDownloadingKokoro(false);
+            onRefreshStatus();
+            setMsg({ text: "Kokoro offline voice assets are ready.", type: "success" });
+            return;
+          }
+          if (op.state === "failed" || op.state === "cancelled") {
+            setDownloadingKokoro(false);
+            setKokoroProgress(null);
+            setMsg({ text: `Download ${op.state}: ${op.error || op.message_code}`, type: "error" });
+            return;
           }
         } catch {
-          // ignore transient poll error
+          consecutiveFailures += 1;
+          if (consecutiveFailures >= 5) throw new Error("Lost contact with the asset download.");
         }
-      }, 500);
+      }
     } catch (err: any) {
-      setDownloadingKokoro(false);
-      setKokoroProgress(null);
-      setMsg({ text: err.message || "Failed to start download", type: "error" });
+      if (pollGenerationRef.current === generation) {
+        setDownloadingKokoro(false);
+        setKokoroProgress(null);
+        setMsg({ text: err.message || "Failed to start download", type: "error" });
+      }
     }
   };
 
-  // Compile Ollama models from setup status and defaults
+  const handleDeleteSecret = async (provider: "gemini" | "groq" | "elevenlabs") => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await api.deleteSecret(provider);
+      setSavedKeys((current) => ({ ...current, [provider]: false }));
+      onRefreshStatus();
+      setMsg({ text: `${provider[0].toUpperCase() + provider.slice(1)} key removed from Keychain.`, type: "success" });
+    } catch (error) {
+      setMsg({ text: error instanceof Error ? error.message : "The key could not be removed.", type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const ollamaOptions = Array.from(
     new Set([...(setupStatus?.ollama_models || []), ...OLLAMA_DEFAULT_MODELS])
   );
 
+  const needsGeminiKey = config.llm.provider === "gemini" || config.tts.provider === "gemini";
+  const needsGroqKey = config.llm.provider === "groq";
+  const needsElevenlabsKey = config.tts.provider === "elevenlabs";
+  const anyKeyNeeded = needsGeminiKey || needsGroqKey || needsElevenlabsKey;
+  const kokoroAssetsPresent = Boolean(
+    setupStatus?.kokoro_model_present && setupStatus?.kokoro_voices_present
+  );
+  const kokoroReady = Boolean(
+    kokoroAssetsPresent && setupStatus?.kokoro_runtime_available
+  );
+
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <div className="modal-dialog">
-        <h2 id="settings-title" className="modal-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <SettingsIcon size={20} /> Settings
-        </h2>
+    <div className="modal-overlay">
+      <div
+        ref={dialogRef}
+        className="modal-dialog settings-modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        tabIndex={-1}
+      >
+        <div className="settings-header">
+          <div className="settings-header-title">
+            <SettingsIcon size={18} className="settings-header-icon" />
+            <h2 id="settings-title">Settings</h2>
+          </div>
+          <button
+            type="button"
+            className="settings-close-x"
+            onClick={onClose}
+            disabled={saving || downloadingKokoro}
+            title="Close"
+            aria-label="Close settings"
+          >
+            <CloseIcon size={14} />
+          </button>
+        </div>
 
         {msg && (
-          <div
-            style={{
-              padding: "8px 12px",
-              marginBottom: "12px",
-              borderRadius: "2px",
-              background: msg.type === "success" ? "#d4edda" : "#f8d7da",
-              color: msg.type === "success" ? "#155724" : "#721c24",
-              border: `1px solid ${msg.type === "success" ? "#c3e6cb" : "#f5c6cb"}`,
-              fontSize: "0.85rem",
-            }}
-          >
+          <div className={`settings-alert-banner ${msg.type}`} role={msg.type === "error" ? "alert" : "status"}>
             {msg.text}
           </div>
         )}
 
-        {/* Section 1: Story Analysis */}
-        <div style={{ marginBottom: "16px" }}>
-          <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>Story Analysis & Characters</h3>
-          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
-            The AI model used to detect dialogue, characters, and emotions in your stories.
-          </p>
+        {/* Section 1: Side-by-Side Engines Grid */}
+        <div className="settings-engines-grid">
+          {/* Engine Column 1: Story Analysis */}
+          <div className="settings-card-panel">
+            <div className="settings-panel-header">
+              <span className="settings-panel-title">Story Analysis</span>
+            </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-            <div>
-              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Provider</label>
+            <div className="settings-row-compact">
+              <label className="settings-label" htmlFor="llm-provider">Provider</label>
               <select
+                id="llm-provider"
+                className="settings-select"
                 value={config.llm.provider}
                 onChange={(e) => {
                   const prov = e.target.value;
-                  const defModel = prov === "gemini" ? "gemini-3.8-flash" : prov === "groq" ? "llama-3.3-70b-versatile" : prov === "rule_based" ? "builtin" : (setupStatus?.ollama_models?.[0] || "llama3.2");
+                  const defModel = prov === "gemini"
+                    ? "gemini-3.8-flash"
+                    : prov === "groq"
+                    ? "llama-3.3-70b-versatile"
+                    : prov === "rule_based"
+                    ? "builtin"
+                    : (setupStatus?.ollama_models?.[0] || "llama3.2");
                   setCustomLlmModel(false);
                   setConfig({
                     ...config,
@@ -201,22 +338,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   });
                 }}
               >
-                <option value="gemini">Gemini (Cloud AI)</option>
-                <option value="groq">Groq (Ultra-Fast Cloud AI - Free Tier)</option>
-                <option value="rule_based">Rule-Based / Instant (100% Offline & Free)</option>
+                <option value="groq">Groq (Ultra-Fast Cloud - Free Tier)</option>
+                <option value="gemini">Gemini (Google Cloud AI)</option>
+                <option value="rule_based">Rule-Based (100% Offline & Free)</option>
                 <option value="ollama">Ollama (Local AI / Offline)</option>
               </select>
             </div>
 
-            <div>
-              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Model</label>
+            <div className="settings-row-compact">
+              <label className="settings-label" htmlFor="llm-model">Model</label>
               {config.llm.provider === "rule_based" ? (
-                <select disabled value="builtin">
-                  <option value="builtin">Built-in Dialogue & Cast Parser</option>
-                </select>
+                <input
+                  id="llm-model"
+                  type="text"
+                  className="settings-input"
+                  disabled
+                  value="Built-in Dialogue & Cast Parser"
+                />
               ) : config.llm.provider === "groq" ? (
                 <>
                   <select
+                    id="llm-model"
+                    className="settings-select"
                     value={customLlmModel ? "custom" : config.llm.model}
                     onChange={(e) => {
                       if (e.target.value === "custom") {
@@ -240,9 +383,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {customLlmModel && (
                     <input
                       type="text"
-                      placeholder="Enter Groq model name (e.g. llama-3.3-70b-versatile)"
+                      className="settings-input"
+                      placeholder="e.g. llama-3.3-70b-versatile"
                       value={config.llm.model}
-                      style={{ marginTop: "6px" }}
+                      style={{ marginTop: "4px" }}
                       onChange={(e) =>
                         setConfig({
                           ...config,
@@ -255,6 +399,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               ) : config.llm.provider === "gemini" ? (
                 <>
                   <select
+                    id="llm-model"
+                    className="settings-select"
                     value={customLlmModel ? "custom" : config.llm.model}
                     onChange={(e) => {
                       if (e.target.value === "custom") {
@@ -273,14 +419,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {m.label}
                       </option>
                     ))}
-                    <option value="custom">Custom model name...</option>
+                    <option value="custom">Custom model...</option>
                   </select>
                   {customLlmModel && (
                     <input
                       type="text"
+                      className="settings-input"
                       placeholder="Enter Gemini model name"
                       value={config.llm.model}
-                      style={{ marginTop: "6px" }}
+                      style={{ marginTop: "4px" }}
                       onChange={(e) =>
                         setConfig({
                           ...config,
@@ -293,6 +440,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               ) : (
                 <>
                   <select
+                    id="llm-model"
+                    className="settings-select"
                     value={customLlmModel ? "custom" : config.llm.model}
                     onChange={(e) => {
                       if (e.target.value === "custom") {
@@ -311,14 +460,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         {modelName} {setupStatus?.ollama_models?.includes(modelName) ? "(Installed)" : ""}
                       </option>
                     ))}
-                    <option value="custom">Custom model name...</option>
+                    <option value="custom">Custom model...</option>
                   </select>
                   {customLlmModel && (
                     <input
                       type="text"
+                      className="settings-input"
                       placeholder="Enter Ollama model name"
                       value={config.llm.model}
-                      style={{ marginTop: "6px" }}
+                      style={{ marginTop: "4px" }}
                       onChange={(e) =>
                         setConfig({
                           ...config,
@@ -331,25 +481,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               )}
             </div>
           </div>
-        </div>
 
-        {/* Section 2: Voice & Speech */}
-        <div style={{ marginBottom: "16px" }}>
-          <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>Voice & Speech (Text to Speech)</h3>
-          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
-            The voice engine that reads and speaks character lines out loud.
-          </p>
+          {/* Engine Column 2: Voice & Speech */}
+          <div className="settings-card-panel">
+            <div className="settings-panel-header">
+              <span className="settings-panel-title">Voice & Speech (TTS)</span>
+              
+            </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-            <div>
-              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Voice Provider</label>
+            <div className="settings-row-compact">
+              <label className="settings-label" htmlFor="tts-provider">Voice Provider</label>
               <select
+                id="tts-provider"
+                className="settings-select"
                 value={config.tts.provider}
                 onChange={(e) => {
                   const prov = e.target.value;
-                  let defModel = "gemini-3.8-flash-lite-tts";
+                  let defModel = "eleven_multilingual_v2";
                   if (prov === "kokoro") defModel = "kokoro-v1.0-int8";
-                  if (prov === "elevenlabs") defModel = "eleven_multilingual_v2";
+                  if (prov === "gemini") defModel = "gemini-3.8-flash-lite-tts";
                   setCustomTtsModel(false);
                   setConfig({
                     ...config,
@@ -357,17 +507,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   });
                 }}
               >
-                <option value="gemini">Gemini (Cloud)</option>
-                <option value="kokoro">Kokoro (Offline / Local)</option>
                 <option value="elevenlabs">ElevenLabs (High-Realism Cloud)</option>
+                <option value="kokoro">Kokoro (100% Offline / Local)</option>
+                <option value="gemini">Gemini (Cloud)</option>
               </select>
             </div>
 
-            <div>
-              <label style={{ fontSize: "0.8rem", fontWeight: "bold" }}>Voice Model</label>
+            <div className="settings-row-compact">
+              <label className="settings-label" htmlFor="tts-model">Voice Model</label>
               {config.tts.provider === "elevenlabs" ? (
                 <>
                   <select
+                    id="tts-model"
+                    className="settings-select"
                     value={customTtsModel ? "custom" : config.tts.model}
                     onChange={(e) => {
                       if (e.target.value === "custom") {
@@ -391,9 +543,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {customTtsModel && (
                     <input
                       type="text"
-                      placeholder="Enter ElevenLabs model name"
+                      className="settings-input"
+                      placeholder="Enter model name"
                       value={config.tts.model}
-                      style={{ marginTop: "6px" }}
+                      style={{ marginTop: "4px" }}
                       onChange={(e) =>
                         setConfig({
                           ...config,
@@ -404,258 +557,241 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </>
               ) : config.tts.provider === "kokoro" ? (
-                <select
-                  value={config.tts.model}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      tts: { ...config.tts, model: e.target.value },
-                    })
-                  }
-                >
-                  <option value="kokoro-v1.0-int8">kokoro-v1.0-int8 (Built-in offline)</option>
-                </select>
+                <input
+                  id="tts-model"
+                  type="text"
+                  className="settings-input"
+                  disabled
+                  value="kokoro-v1.0-int8 (Built-in offline)"
+                />
               ) : (
-                <select
-                  value={config.tts.model}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      tts: { ...config.tts, model: e.target.value },
-                    })
-                  }
-                >
-                  <option value="gemini-3.8-flash-lite-tts">gemini-3.8-flash-lite-tts (Standard)</option>
-                </select>
+                <input
+                  id="tts-model"
+                  type="text"
+                  className="settings-input"
+                  disabled
+                  value="gemini-3.8-flash-lite-tts (Standard)"
+                />
               )}
             </div>
           </div>
         </div>
 
-        {/* Section 3: API Keys (Only shown when a cloud provider is selected) */}
-        {(() => {
-          const needsGeminiKey = config.llm.provider === "gemini" || config.tts.provider === "gemini";
-          const needsGroqKey = config.llm.provider === "groq";
-          const needsElevenlabsKey = config.tts.provider === "elevenlabs";
-          const anyKeyNeeded = needsGeminiKey || needsGroqKey || needsElevenlabsKey;
-
-          return (
-            <div style={{ marginBottom: "16px" }}>
-              <h3 style={{ fontSize: "1.05rem", marginBottom: "2px" }}>API Keys</h3>
-              <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 8px 0" }}>
-                Keys are saved in your system credential manager and never exposed in plain text.
-              </p>
-
-              {!anyKeyNeeded ? (
-                <div
-                  style={{
-                    padding: "10px 14px",
-                    background: "var(--paper-card)",
-                    border: "1.5px dashed var(--ink)",
-                    borderRadius: "3px",
-                    fontSize: "0.85rem",
-                    color: "var(--ink)",
-                  }}
-                >
-                  <span style={{ fontWeight: 600, color: "var(--sage)" }}>100% Offline Setup: </span>
-                  Both Story Analysis ({config.llm.provider}) and Voice ({config.tts.provider}) are set to local/offline providers. No cloud API keys required!
-                </div>
-              ) : (
-                <>
-                  {needsGeminiKey && (
-                    <div style={{ marginBottom: "10px" }}>
-                      <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                        <span>Gemini API Key</span>
-                        {setupStatus?.gemini_key_present || geminiKey.trim() ? (
-                          <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem", fontWeight: 600 }}>
-                            <CheckIcon size={13} /> Stored in Keychain
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--rust)", fontSize: "0.75rem", fontWeight: 600 }}>(Key required for Gemini)</span>
-                        )}
-                      </label>
-                      <div className="password-input-wrapper">
-                        <input
-                          type={showGeminiKey ? "text" : "password"}
-                          placeholder={setupStatus?.gemini_key_present ? "•••••••••••••••• (Stored in Keychain)" : "Paste Gemini API Key"}
-                          value={geminiKey}
-                          onChange={(e) => setGeminiKey(e.target.value)}
-                          aria-label="Gemini API Key"
-                          autoComplete="off"
-                          spellCheck="false"
-                        />
-                        <button
-                          type="button"
-                          className="password-toggle-btn"
-                          onClick={() => setShowGeminiKey(!showGeminiKey)}
-                          title={showGeminiKey ? "Hide API key" : "Show API key"}
-                          aria-label={showGeminiKey ? "Hide API key" : "Show API key"}
-                        >
-                          {showGeminiKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {needsGroqKey && (
-                    <div style={{ marginBottom: "10px" }}>
-                      <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                        <span>Groq API Key</span>
-                        {setupStatus?.groq_key_present || groqKey.trim() ? (
-                          <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem", fontWeight: 600 }}>
-                            <CheckIcon size={13} /> Stored in Keychain
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--rust)", fontSize: "0.75rem", fontWeight: 600 }}>(Key required for Groq)</span>
-                        )}
-                      </label>
-                      <div className="password-input-wrapper">
-                        <input
-                          type={showGroqKey ? "text" : "password"}
-                          placeholder={setupStatus?.groq_key_present ? "•••••••••••••••• (Stored in Keychain)" : "Paste Groq API Key (gsk_...)"}
-                          value={groqKey}
-                          onChange={(e) => setGroqKey(e.target.value)}
-                          aria-label="Groq API Key"
-                          autoComplete="off"
-                          spellCheck="false"
-                        />
-                        <button
-                          type="button"
-                          className="password-toggle-btn"
-                          onClick={() => setShowGroqKey(!showGroqKey)}
-                          title={showGroqKey ? "Hide API key" : "Show API key"}
-                          aria-label={showGroqKey ? "Hide API key" : "Show API key"}
-                        >
-                          {showGroqKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {needsElevenlabsKey && (
-                    <div style={{ marginBottom: "10px" }}>
-                      <label style={{ fontSize: "0.8rem", fontWeight: "bold", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                        <span>ElevenLabs API Key</span>
-                        {setupStatus?.elevenlabs_key_present || elevenlabsKey.trim() ? (
-                          <span style={{ color: "#155724", display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "0.75rem", fontWeight: 600 }}>
-                            <CheckIcon size={13} /> Stored in Keychain
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--rust)", fontSize: "0.75rem", fontWeight: 600 }}>(Key required for ElevenLabs)</span>
-                        )}
-                      </label>
-                      <div className="password-input-wrapper">
-                        <input
-                          type={showElevenlabsKey ? "text" : "password"}
-                          placeholder={setupStatus?.elevenlabs_key_present ? "•••••••••••••••• (Stored in Keychain)" : "Paste ElevenLabs API Key"}
-                          value={elevenlabsKey}
-                          onChange={(e) => setElevenlabsKey(e.target.value)}
-                          aria-label="ElevenLabs API Key"
-                          autoComplete="off"
-                          spellCheck="false"
-                        />
-                        <button
-                          type="button"
-                          className="password-toggle-btn"
-                          onClick={() => setShowElevenlabsKey(!showElevenlabsKey)}
-                          title={showElevenlabsKey ? "Hide API key" : "Show API key"}
-                          aria-label={showElevenlabsKey ? "Hide API key" : "Show API key"}
-                        >
-                          {showElevenlabsKey ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* Section 4: Kokoro Offline Voice Assets (Only shown when Kokoro is selected) */}
-        {config.tts.provider === "kokoro" && (
-        <div
-          style={{
-            padding: "12px",
-            background: "var(--paper-card)",
-            border: "1.5px dashed var(--ink)",
-            borderRadius: "3px",
-            marginBottom: "16px",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-            <span style={{ fontWeight: "bold", fontSize: "0.9rem" }}>
-              Kokoro Offline Voice Files (142 MB)
-            </span>
-            <span style={{ fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: "4px" }}>
-              {setupStatus?.kokoro_model_present && setupStatus?.kokoro_voices_present ? (
-                <span style={{ color: "#155724", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                  <CheckIcon size={13} /> Ready on disk
-                </span>
-              ) : (
-                <span style={{ color: "var(--rust)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                  <WarningIcon size={13} /> Not downloaded
-                </span>
-              )}
-            </span>
+        {/* Section 2: API Keys Card (Compact 2-Column Grid) */}
+        <div className="settings-card-panel" style={{ padding: "12px 14px" }}>
+          <div className="settings-panel-header" style={{ marginBottom: "10px" }}>
+            <span className="settings-panel-title">API Credentials</span>
           </div>
 
-          <p style={{ fontSize: "0.78rem", color: "#666", margin: "0 0 10px 0" }}>
-            Required for local text-to-speech without internet connection.
-          </p>
+          {!anyKeyNeeded ? (
+            <div className="settings-offline-pill">
+              <CheckIcon size={14} style={{ color: "#15803d" }} />
+              <span>
+                <strong>100% Offline:</strong> Local AI & Kokoro selected. No cloud API keys needed.
+              </span>
+            </div>
+          ) : (
+            <div className="settings-keys-grid">
+              {needsGroqKey && (
+                <div className="settings-key-block">
+                  <div className="settings-key-head">
+                    <label className="settings-label" htmlFor="groq-api-key">Groq API Key</label>
+                    <div className="key-status-actions">
+                      {savedKeys.groq ? (
+                        <span className="keychain-badge stored"><CheckIcon size={12} /> In Keychain</span>
+                      ) : (
+                        <span className="keychain-badge missing">Key required</span>
+                      )}
+                      {savedKeys.groq ? (
+                        <button type="button" className="remove-secret-btn" onClick={() => void handleDeleteSecret("groq")}>Remove</button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="password-input-wrapper">
+                    <input
+                      id="groq-api-key"
+                      className="settings-input"
+                      type={showGroqKey ? "text" : "password"}
+                      placeholder={savedKeys.groq ? "Stored in Keychain (enter to replace)" : "Paste Groq API Key (gsk_...)"}
+                      value={groqKey}
+                      onChange={(e) => setGroqKey(e.target.value)}
+                      aria-label="Groq API Key"
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowGroqKey(!showGroqKey)}
+                      title={showGroqKey ? "Hide key" : "Show key"}
+                      aria-label={showGroqKey ? "Hide key" : "Show key"}
+                    >
+                      {showGroqKey ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
-          <button
-            type="button"
-            className="btn-secondary"
-            style={{ fontSize: "0.8rem", width: "100%" }}
-            onClick={handleDownloadKokoro}
-            disabled={downloadingKokoro}
-          >
-            {downloadingKokoro
-              ? `Downloading Kokoro Assets (${kokoroProgress ?? 0}%)...`
-              : setupStatus?.kokoro_model_present && setupStatus?.kokoro_voices_present
-              ? "Re-download Kokoro Assets"
-              : "Download Kokoro Assets"}
-          </button>
+              {needsElevenlabsKey && (
+                <div className="settings-key-block">
+                  <div className="settings-key-head">
+                    <label className="settings-label" htmlFor="elevenlabs-api-key">ElevenLabs API Key</label>
+                    <div className="key-status-actions">
+                      {savedKeys.elevenlabs ? (
+                        <span className="keychain-badge stored"><CheckIcon size={12} /> In Keychain</span>
+                      ) : (
+                        <span className="keychain-badge missing">Key required</span>
+                      )}
+                      {savedKeys.elevenlabs ? (
+                        <button type="button" className="remove-secret-btn" onClick={() => void handleDeleteSecret("elevenlabs")}>Remove</button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="password-input-wrapper">
+                    <input
+                      id="elevenlabs-api-key"
+                      className="settings-input"
+                      type={showElevenlabsKey ? "text" : "password"}
+                      placeholder={savedKeys.elevenlabs ? "Stored in Keychain (enter to replace)" : "Paste ElevenLabs API Key"}
+                      value={elevenlabsKey}
+                      onChange={(e) => setElevenlabsKey(e.target.value)}
+                      aria-label="ElevenLabs API Key"
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowElevenlabsKey(!showElevenlabsKey)}
+                      title={showElevenlabsKey ? "Hide key" : "Show key"}
+                      aria-label={showElevenlabsKey ? "Hide key" : "Show key"}
+                    >
+                      {showElevenlabsKey ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
-          {/* Live Progress Bar */}
-          {kokoroProgress !== null && (
-            <div style={{ marginTop: "10px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: "4px" }}>
-                <span style={{ fontFamily: "var(--font-sans)", color: "var(--ink)" }}>
-                  {kokoroMessage || "Downloading voice assets..."}
-                </span>
-                <span style={{ fontWeight: "bold" }}>{kokoroProgress}%</span>
-              </div>
-              <div
-                style={{
-                  width: "100%",
-                  height: "8px",
-                  background: "#e5dac4",
-                  border: "1px solid var(--ink)",
-                  borderRadius: "2px",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${kokoroProgress}%`,
-                    height: "100%",
-                    background: "var(--rust)",
-                    transition: "width 0.25s ease-in-out",
-                  }}
-                />
-              </div>
+              {needsGeminiKey && (
+                <div className="settings-key-block">
+                  <div className="settings-key-head">
+                    <label className="settings-label" htmlFor="gemini-api-key">Gemini API Key</label>
+                    <div className="key-status-actions">
+                      {savedKeys.gemini ? (
+                        <span className="keychain-badge stored"><CheckIcon size={12} /> In Keychain</span>
+                      ) : (
+                        <span className="keychain-badge missing">Key required</span>
+                      )}
+                      {savedKeys.gemini ? (
+                        <button type="button" className="remove-secret-btn" onClick={() => void handleDeleteSecret("gemini")}>Remove</button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="password-input-wrapper">
+                    <input
+                      id="gemini-api-key"
+                      className="settings-input"
+                      type={showGeminiKey ? "text" : "password"}
+                      placeholder={savedKeys.gemini ? "Stored in Keychain (enter to replace)" : "Paste Gemini API Key"}
+                      value={geminiKey}
+                      onChange={(e) => setGeminiKey(e.target.value)}
+                      aria-label="Gemini API Key"
+                      autoComplete="off"
+                      spellCheck="false"
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-btn"
+                      onClick={() => setShowGeminiKey(!showGeminiKey)}
+                      title={showGeminiKey ? "Hide key" : "Show key"}
+                      aria-label={showGeminiKey ? "Hide key" : "Show key"}
+                    >
+                      {showGeminiKey ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
+
+        {/* Section 3: Kokoro Offline Voice Assets (When Kokoro is selected) */}
+        {config.tts.provider === "kokoro" && (
+          <div className="settings-card-panel kokoro-panel">
+            <div className="kokoro-panel-head">
+              <div>
+                <span className="kokoro-panel-title">
+                  Kokoro Offline Voice Files (142 MB)
+                </span>
+                <span className="kokoro-panel-subtitle">
+                  For zero-latency local speech
+                </span>
+              </div>
+              <span>
+                {kokoroReady ? (
+                  <span className="keychain-badge stored">
+                    <CheckIcon size={12} /> Ready on disk
+                  </span>
+                ) : (
+                  <span className="keychain-badge missing">
+                    <WarningIcon size={12} />
+                    {kokoroAssetsPresent ? "Runtime unavailable" : "Not downloaded"}
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <div className="kokoro-download-row">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleDownloadKokoro}
+                disabled={downloadingKokoro || (kokoroAssetsPresent && !kokoroReady)}
+              >
+                {downloadingKokoro
+                  ? `${kokoroMessage || "Downloading Assets"} (${kokoroProgress ?? 0}%)`
+                  : kokoroReady
+                  ? "Re-download Assets"
+                  : kokoroAssetsPresent
+                  ? "Restart with latest build"
+                  : "Download Voice Assets"}
+              </button>
+
+              {kokoroProgress !== null && (
+                <div className="kokoro-progress">
+                  <div
+                    className="progress-bar-container"
+                    role="progressbar"
+                    aria-label="Kokoro download progress"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={kokoroProgress}
+                  >
+                    <div className="progress-fill" style={{ width: `${kokoroProgress}%` }} />
+                  </div>
+                  <strong>{kokoroProgress}%</strong>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
-        <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onClose} disabled={saving || downloadingKokoro}>
+        {/* Modal Actions Footer */}
+        <div className="settings-footer-actions">
+          <button
+            type="button"
+            className="settings-btn-cancel"
+            onClick={onClose}
+            disabled={saving || downloadingKokoro}
+          >
             Close
           </button>
-          <button type="button" className="btn-primary" onClick={handleSaveConfig} disabled={saving || downloadingKokoro}>
+          <button
+            type="button"
+            className="settings-btn-save"
+            onClick={handleSaveConfig}
+            disabled={saving || downloadingKokoro}
+          >
             {saving ? "Saving..." : "Save Settings"}
           </button>
         </div>

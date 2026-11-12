@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="100%" height="100%" role="img" aria-label="Teller logo">
+  <title>Teller</title>
+  <style>
+    :root {
+      --teller-neck: #6B7F5E;
+      --teller-head: #C2562B;
+      --teller-beak: #E9A93A;
+    }
+  </style>
+  <g transform="translate(-3 2)">
+    <!-- Chest and neck -->
+    <path fill="var(--teller-neck, #6B7F5E)"
+          d="M32 72C24 94 30 114 52 122C72 126 86 114 82 98C80 90 76 84 74 78Z"/>
+
+    <!-- Head with eye hole, plus crest -->
+    <g fill="var(--teller-head, #C2562B)">
+      <path fill-rule="evenodd"
+            d="M30 58A28 28 0 1 0 86 58A28 28 0 1 0 30 58Z M72 50A8 8 0 1 0 56 50A8 8 0 1 0 72 50Z"/>
+      <path d="M50 34C44 18 32 12 20 14C28 22 32 32 38 42Z"/>
+      <path d="M62 31C62 14 54 6 42 4C48 12 50 24 52 38Z"/>
+      <path d="M72 33C76 20 74 12 68 6C68 16 64 26 62 36Z"/>
+      <circle cx="65" cy="50" r="3.6"/>
+    </g>
+
+    <!-- Open beak: hooked upper, smaller lower -->
+    <g fill="var(--teller-beak, #E9A93A)">
+      <path d="M76 38C100 32 118 46 114 72C110 64 100 60 84 62Z"/>
+      <path d="M82 70C96 66 106 70 108 76C102 82 92 82 77 77Z"/>
+    </g>
+  </g>
+</svg>
+

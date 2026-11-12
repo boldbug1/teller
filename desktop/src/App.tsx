@@ -1,6 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, {
+  startTransition,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { api } from "./api/client";
 import { useAudioPlayer } from "./audio/useAudioPlayer";
+import { AddStoryModal } from "./components/AddStoryModal";
 import { CastRail } from "./components/CastRail";
 import { DeleteModal } from "./components/DeleteModal";
 import { DoctorModal } from "./components/DoctorModal";
@@ -10,160 +17,189 @@ import { StoryRail } from "./components/StoryRail";
 import { StoryScene } from "./components/StoryScene";
 import { Transport } from "./components/Transport";
 import { VoicePickerModal } from "./components/VoicePickerModal";
-import { AddStoryModal } from "./components/AddStoryModal";
 import { Character, OperationEvent, SetupStatus, StoryDetail, StorySummary, VoiceItem } from "./types";
+
+type MobilePanel = "library" | "stage" | "cast";
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
 
 export const App: React.FC = () => {
   const [setupStatus, setSetupStatus] = useState<SetupStatus | null>(null);
   const [stories, setStories] = useState<StorySummary[]>([]);
   const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
   const [selectedStory, setSelectedStory] = useState<StoryDetail | null>(null);
+  const [isStoryLoading, setIsStoryLoading] = useState(false);
   const [voices, setVoices] = useState<VoiceItem[]>([]);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>("stage");
 
-  // Operations state
   const [activeOperation, setActiveOperation] = useState<OperationEvent | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const pollingRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const stopPolling = () => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  };
-
-  const startPollingOperation = (opId: string) => {
-    stopPolling();
-    pollingRef.current = setInterval(async () => {
-      try {
-        const op = await api.getOperation(opId);
-        if (!op) return;
-        setActiveOperation(op);
-        if (op.state === "completed") {
-          stopPolling();
-          refreshStories();
-          if (selectedStoryId) {
-            refreshCurrentStory(selectedStoryId);
-          }
-          setTimeout(() => {
-            setActiveOperation((curr) => (curr?.operation_id === opId ? null : curr));
-          }, 1800);
-        } else if (op.state === "failed") {
-          stopPolling();
-          setOperationError(op.error || op.message_code || "Operation failed");
-        } else if (op.state === "cancelled") {
-          stopPolling();
-          setActiveOperation(null);
-        }
-      } catch {
-        // Ignore transient poll error
-      }
-    }, 600);
-  };
-
-  // Modals state
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDoctorOpen, setIsDoctorOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [voicePickerChar, setVoicePickerChar] = useState<Character | null>(null);
 
-  // Audio player hook
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollingInFlightRef = useRef(false);
+  const operationDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settledOperationsRef = useRef(new Set<string>());
+  const selectedStoryIdRef = useRef(selectedStoryId);
+  selectedStoryIdRef.current = selectedStoryId;
+
   const audio = useAudioPlayer(
     selectedStory?.manifest.story_id,
     selectedStory?.segments || []
   );
 
-  const refreshSetup = async () => {
+  const refreshSetup = useCallback(async () => {
     try {
-      const status = await api.getSetupStatus();
-      setSetupStatus(status);
-    } catch (err) {
-      console.warn("Could not load setup status", err);
+      setSetupStatus(await api.getSetupStatus());
+    } catch (error) {
+      console.warn("Could not load setup status", error);
     }
-  };
+  }, []);
 
-  const refreshStories = async () => {
+  const refreshStories = useCallback(async () => {
     try {
       const list = await api.getStories();
       setStories(list);
-      if (!selectedStoryId && list.length > 0) {
-        setSelectedStoryId(list[0].story_id);
-      }
-    } catch (err) {
-      console.warn("Could not load stories", err);
+      setSelectedStoryId((current) => {
+        if (current && list.some((story) => story.story_id === current)) return current;
+        return list[0]?.story_id || null;
+      });
+    } catch (error) {
+      console.warn("Could not load stories", error);
     }
-  };
+  }, []);
 
-  const refreshCurrentStory = async (storyId: string) => {
+  const refreshCurrentStory = useCallback(async (storyId: string, showLoading = false) => {
+    if (showLoading) setIsStoryLoading(true);
     try {
       const detail = await api.getStory(storyId);
-      setSelectedStory(detail);
-    } catch (err) {
-      console.warn("Could not load story detail", err);
+      if (selectedStoryIdRef.current === storyId) setSelectedStory(detail);
+    } catch (error) {
+      console.warn("Could not load story detail", error);
+      if (selectedStoryIdRef.current === storyId) {
+        setSelectedStory(null);
+        setOperationError("This story could not be opened. Try selecting it again.");
+      }
+    } finally {
+      if (showLoading && selectedStoryIdRef.current === storyId) setIsStoryLoading(false);
     }
-  };
+  }, []);
 
-  const refreshVoices = async () => {
+  const refreshVoices = useCallback(async () => {
     try {
-      const v = await api.getVoices();
-      setVoices(v);
-    } catch (err) {
-      console.warn("Could not load voices", err);
+      setVoices(await api.getVoices());
+    } catch (error) {
+      console.warn("Could not load voices", error);
     }
-  };
+  }, []);
+
+  const refreshProviderState = useCallback(async () => {
+    await Promise.all([refreshSetup(), refreshVoices()]);
+  }, [refreshSetup, refreshVoices]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    pollingInFlightRef.current = false;
+  }, []);
+
+  const scheduleOperationDismissal = useCallback((operationId: string) => {
+    if (operationDismissTimerRef.current) clearTimeout(operationDismissTimerRef.current);
+    operationDismissTimerRef.current = setTimeout(() => {
+      setActiveOperation((current) => current?.operation_id === operationId ? null : current);
+    }, 1800);
+  }, []);
+
+  const handleOperationEvent = useCallback((event: OperationEvent) => {
+    const isSettled = event.state === "completed" || event.state === "failed" || event.state === "cancelled";
+    if (isSettled && settledOperationsRef.current.has(event.operation_id)) return;
+    setActiveOperation(event);
+
+    if (event.state === "completed") {
+      settledOperationsRef.current.add(event.operation_id);
+      stopPolling();
+      void refreshStories();
+      const storyId = selectedStoryIdRef.current;
+      if (storyId) void refreshCurrentStory(storyId);
+      scheduleOperationDismissal(event.operation_id);
+    } else if (event.state === "failed") {
+      settledOperationsRef.current.add(event.operation_id);
+      stopPolling();
+      setOperationError(event.error || event.message_code || "Operation failed");
+    } else if (event.state === "cancelled") {
+      settledOperationsRef.current.add(event.operation_id);
+      stopPolling();
+      setActiveOperation(null);
+    }
+  }, [refreshCurrentStory, refreshStories, scheduleOperationDismissal, stopPolling]);
+
+  const startPollingOperation = useCallback((operationId: string) => {
+    stopPolling();
+    pollingRef.current = setInterval(async () => {
+      if (pollingInFlightRef.current) return;
+      pollingInFlightRef.current = true;
+      try {
+        const operation = await api.getOperation(operationId);
+        if (operation) handleOperationEvent(operation);
+      } catch {
+        // WebSocket events remain the primary progress source.
+      } finally {
+        pollingInFlightRef.current = false;
+      }
+    }, 700);
+  }, [handleOperationEvent, stopPolling]);
 
   useEffect(() => {
-    api.init().then(() => {
-      refreshSetup();
-      refreshStories();
-      refreshVoices();
+    let disposed = false;
+    void api.init().then(() => {
+      if (disposed) return;
+      return Promise.all([refreshSetup(), refreshStories(), refreshVoices()]);
+    }).catch((error) => {
+      if (!disposed) setOperationError(getErrorMessage(error, "Teller could not connect to its local service."));
     });
 
-    const unsubscribe = api.onOperationEvent((event) => {
-      setActiveOperation(event);
-      if (event.state === "completed") {
-        stopPolling();
-        refreshStories();
-        if (selectedStoryId) {
-          refreshCurrentStory(selectedStoryId);
-        }
-        setTimeout(() => {
-          setActiveOperation((curr) => (curr?.operation_id === event.operation_id ? null : curr));
-        }, 1800);
-      } else if (event.state === "failed") {
-        stopPolling();
-        setOperationError(event.error || event.message_code || "Operation failed");
-      }
-    });
-
+    const unsubscribe = api.onOperationEvent(handleOperationEvent);
     return () => {
+      disposed = true;
       stopPolling();
+      if (operationDismissTimerRef.current) clearTimeout(operationDismissTimerRef.current);
       unsubscribe();
     };
-  }, [selectedStoryId]);
+  }, [handleOperationEvent, refreshSetup, refreshStories, refreshVoices, stopPolling]);
 
   useEffect(() => {
-    if (selectedStoryId) {
-      refreshCurrentStory(selectedStoryId);
-    } else {
+    if (!selectedStoryId) {
       setSelectedStory(null);
+      setIsStoryLoading(false);
+      return;
     }
-  }, [selectedStoryId]);
+    setSelectedStory(null);
+    void refreshCurrentStory(selectedStoryId, true);
+  }, [refreshCurrentStory, selectedStoryId]);
 
-  const handleAnalyze = async (force = false) => {
-    if (!selectedStoryId) return;
+  const handleAnalyze = useCallback(async (force = false) => {
+    const storyId = selectedStoryIdRef.current;
+    if (!storyId) return;
     setOperationError(null);
 
-    // If Gemini or Groq is chosen but no key is stored, guide user straight to Settings
     if (setupStatus?.llm_provider === "gemini" && !setupStatus.gemini_key_present) {
-      setOperationError("Gemini API key is required for story analysis. Please add your key in Settings.");
+      setOperationError("Gemini API key is required for story analysis.");
       setIsSettingsOpen(true);
       return;
     }
     if (setupStatus?.llm_provider === "groq" && !setupStatus.groq_key_present) {
-      setOperationError("Groq API key is required for story analysis. Please add your key in Settings.");
+      setOperationError("Groq API key is required for story analysis.");
       setIsSettingsOpen(true);
       return;
     }
@@ -175,40 +211,49 @@ export const App: React.FC = () => {
         state: "running",
         completed: 0,
         total: 1,
-        message_code: "Starting analysis...",
+        message_code: "starting_analysis",
       });
-      const res = await api.analyzeStory(selectedStoryId, force);
+      const result = await api.analyzeStory(storyId, force);
       setActiveOperation({
-        operation_id: res.operation_id,
+        operation_id: result.operation_id,
         kind: "analyze",
         state: "running",
         completed: 0,
         total: 1,
-        message_code: "Analyzing story chunks with AI...",
+        message_code: "reading_story_chunks",
       });
-      startPollingOperation(res.operation_id);
-    } catch (err: any) {
+      startPollingOperation(result.operation_id);
+    } catch (error) {
       setActiveOperation(null);
-      const errMsg = err.message || "Failed to start analysis";
-      setOperationError(errMsg);
-      if (errMsg.includes("Settings") || errMsg.includes("API key") || errMsg.includes("key not found")) {
-        setIsSettingsOpen(true);
-      }
+      const message = getErrorMessage(error, "Failed to start analysis");
+      setOperationError(message);
+      if (/settings|api key|key not found/i.test(message)) setIsSettingsOpen(true);
     }
-  };
+  }, [setupStatus, startPollingOperation]);
 
-  const handleRender = async () => {
-    if (!selectedStoryId) return;
+  const handleRender = useCallback(async () => {
+    const storyId = selectedStoryIdRef.current;
+    if (!storyId) return;
     setOperationError(null);
 
-    // Pre-flight checks for TTS provider
     if (setupStatus?.tts_provider === "elevenlabs" && !setupStatus.elevenlabs_key_present) {
-      setOperationError("ElevenLabs API key is required to render voices. Please add your key in Settings.");
+      setOperationError("ElevenLabs API key is required to render voices.");
       setIsSettingsOpen(true);
       return;
     }
-    if (setupStatus?.tts_provider === "kokoro" && (!setupStatus.kokoro_model_present || !setupStatus.kokoro_voices_present)) {
-      setOperationError("Kokoro voice assets must be downloaded first. Please open Settings to download offline assets.");
+    if (
+      setupStatus?.tts_provider === "kokoro"
+      && (
+        !setupStatus.kokoro_model_present
+        || !setupStatus.kokoro_voices_present
+        || !setupStatus.kokoro_runtime_available
+      )
+    ) {
+      setOperationError(
+        setupStatus.kokoro_model_present && setupStatus.kokoro_voices_present
+          ? "The Kokoro runtime is incomplete. Restart Teller after installing the latest desktop build."
+          : "Download the Kokoro voice assets before rendering."
+      );
       setIsSettingsOpen(true);
       return;
     }
@@ -220,87 +265,112 @@ export const App: React.FC = () => {
         state: "running",
         completed: 0,
         total: selectedStory?.segments.length || 1,
-        message_code: "Starting voice synthesis...",
+        message_code: "preparing_recording",
       });
-      const res = await api.renderStory(selectedStoryId);
+      const result = await api.renderStory(storyId);
       setActiveOperation({
-        operation_id: res.operation_id,
+        operation_id: result.operation_id,
         kind: "render",
         state: "running",
         completed: 0,
         total: selectedStory?.segments.length || 1,
-        message_code: "Rendering character lines...",
+        message_code: "recording_character_lines",
       });
-      startPollingOperation(res.operation_id);
-    } catch (err: any) {
+      startPollingOperation(result.operation_id);
+    } catch (error) {
       setActiveOperation(null);
-      setOperationError(err.message || "Failed to start voice rendering");
+      setOperationError(getErrorMessage(error, "Failed to start voice rendering"));
     }
-  };
+  }, [selectedStory?.segments.length, setupStatus, startPollingOperation]);
 
-  const handleReassignCast = async () => {
-    if (!selectedStoryId) return;
+  const handleReassignCast = useCallback(async () => {
+    const storyId = selectedStoryIdRef.current;
+    if (!storyId) return;
+    setOperationError(null);
+    if (
+      setupStatus?.tts_provider === "kokoro"
+      && (
+        !setupStatus.kokoro_model_present
+        || !setupStatus.kokoro_voices_present
+        || !setupStatus.kokoro_runtime_available
+      )
+    ) {
+      setOperationError(
+        setupStatus.kokoro_model_present && setupStatus.kokoro_voices_present
+          ? "The Kokoro runtime is incomplete. Restart Teller after installing the latest desktop build."
+          : "Download the Kokoro voice assets before auto-casting."
+      );
+      setIsSettingsOpen(true);
+      return;
+    }
     try {
-      const res = await api.reassignVoices(selectedStoryId);
+      const result = await api.reassignVoices(storyId);
       setActiveOperation({
-        operation_id: res.operation_id,
+        operation_id: result.operation_id,
         kind: "reassign_voices",
         state: "pending",
         completed: 0,
         total: selectedStory?.characters.length || 1,
-        message_code: "Reassigning cast voices...",
+        message_code: "recasting_voices",
       });
-      startPollingOperation(res.operation_id);
-    } catch (err: any) {
-      setOperationError(`Voice reassignment failed: ${err.message}`);
+      startPollingOperation(result.operation_id);
+    } catch (error) {
+      setOperationError(getErrorMessage(error, "Voice reassignment failed"));
     }
-  };
+  }, [selectedStory?.characters.length, setupStatus, startPollingOperation]);
 
-  const handleCancelOperation = async () => {
+  const handleCancelOperation = useCallback(async () => {
     if (!activeOperation) return;
-    const opId = activeOperation.operation_id;
+    const operationId = activeOperation.operation_id;
     stopPolling();
     try {
-      if (opId !== "init") {
-        await api.cancelOperation(opId);
-      }
-      setActiveOperation(null);
-    } catch (err: any) {
-      console.warn("Cancel failed", err);
+      if (operationId !== "init") await api.cancelOperation(operationId);
+      settledOperationsRef.current.add(operationId);
+    } catch (error) {
+      console.warn("Cancel failed", error);
+    } finally {
       setActiveOperation(null);
     }
-  };
+  }, [activeOperation, stopPolling]);
 
-  const handleAssignVoice = async (characterId: string, voiceId: string) => {
-    if (!selectedStoryId) return;
+  const handleAssignVoice = useCallback(async (characterId: string, voiceId: string) => {
+    const storyId = selectedStoryIdRef.current;
+    if (!storyId) return;
     try {
-      await api.updateCharacterVoice(selectedStoryId, characterId, voiceId);
-      refreshCurrentStory(selectedStoryId);
-    } catch (err: any) {
-      alert(`Failed to assign voice: ${err.message}`);
+      await api.updateCharacterVoice(storyId, characterId, voiceId);
+      await refreshCurrentStory(storyId);
+    } catch (error) {
+      const message = getErrorMessage(error, "Failed to assign voice");
+      setOperationError(message);
+      throw new Error(message);
     }
-  };
+  }, [refreshCurrentStory]);
 
-  const handleDeleteStoryConfirm = async () => {
-    if (!deleteTargetId) return;
+  const handleDeleteStoryConfirm = useCallback(async () => {
+    if (!deleteTargetId || isDeleting) return;
+    setIsDeleting(true);
     try {
       await api.deleteStory(deleteTargetId);
-      if (selectedStoryId === deleteTargetId) {
+      if (selectedStoryIdRef.current === deleteTargetId) {
         setSelectedStoryId(null);
         setSelectedStory(null);
       }
       setDeleteTargetId(null);
-      refreshStories();
-    } catch (err: any) {
-      alert(`Delete failed: ${err.message}`);
+      await refreshStories();
+    } catch (error) {
+      setOperationError(getErrorMessage(error, "The story could not be deleted"));
+    } finally {
+      setIsDeleting(false);
     }
-  };
+  }, [deleteTargetId, isDeleting, refreshStories]);
 
-  const handleDownloadStoryAudio = async () => {
-    if (!selectedStory || selectedStory.rendered_count === 0) return;
+  const handleDownloadStoryAudio = useCallback(async () => {
+    if (!selectedStory || selectedStory.rendered_count === 0 || isExporting) return;
     const storyId = selectedStory.manifest.story_id;
-    const rawTitle = selectedStory.manifest.title || "story";
-    const safeTitle = rawTitle.replace(/[^\w\s-]/g, "").trim().replace(/[-\s]+/g, "_") || "story";
+    const safeTitle = (selectedStory.manifest.title || "story")
+      .replace(/[^\w\s-]/g, "")
+      .trim()
+      .replace(/[-\s]+/g, "_") || "story";
     const filename = `${safeTitle}.wav`;
 
     setIsExporting(true);
@@ -310,144 +380,169 @@ export const App: React.FC = () => {
           const { save } = await import("@tauri-apps/plugin-dialog");
           const selectedPath = await save({
             defaultPath: filename,
-            filters: [
-              {
-                name: "Waveform Audio (*.wav)",
-                extensions: ["wav"],
-              },
-            ],
+            filters: [{ name: "Waveform Audio", extensions: ["wav"] }],
           });
-          if (selectedPath && typeof selectedPath === "string") {
-            const result = await api.exportStoryAudio(storyId, selectedPath);
-            alert(`Story audio exported successfully to:\n${result.path}`);
+          if (selectedPath === null) return;
+          if (typeof selectedPath === "string") {
+            await api.exportStoryAudio(storyId, selectedPath);
             return;
           }
-          if (selectedPath === null) {
-            return;
-          }
-        } catch (dialogErr) {
-          console.warn("Tauri save dialog not available, falling back to direct download", dialogErr);
+        } catch (error) {
+          console.warn("Native save dialog unavailable, using browser download", error);
         }
       }
 
-      // Browser download fallback
-      const downloadUrl = api.getStoryDownloadUrl(storyId);
-      const res = await fetch(downloadUrl);
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.detail || `Download failed: HTTP ${res.status}`);
-      }
-      const blob = await res.blob();
+      const blob = await api.downloadStoryAudio(storyId);
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = blobUrl;
       link.download = filename;
       document.body.appendChild(link);
       link.click();
-      document.body.removeChild(link);
+      link.remove();
       setTimeout(() => window.URL.revokeObjectURL(blobUrl), 10000);
-    } catch (err: any) {
-      setOperationError(`Failed to download audio: ${err.message}`);
+    } catch (error) {
+      setOperationError(getErrorMessage(error, "Failed to export audio"));
     } finally {
       setIsExporting(false);
     }
-  };
+  }, [isExporting, selectedStory]);
+
+  const handleSelectStory = useCallback((storyId: string) => {
+    startTransition(() => setSelectedStoryId(storyId));
+    setMobilePanel("stage");
+  }, []);
+  const handleOpenAdd = useCallback(() => setIsAddOpen(true), []);
+  const handleOpenSettings = useCallback(() => setIsSettingsOpen(true), []);
+  const handleOpenDoctor = useCallback(() => setIsDoctorOpen(true), []);
+  const handleDismissError = useCallback(() => {
+    setOperationError(null);
+    audio.clearError();
+  }, [audio.clearError]);
+  const handleRequestDelete = useCallback((storyId: string) => setDeleteTargetId(storyId), []);
+  const handleSelectCharacterVoice = useCallback((character: Character) => setVoicePickerChar(character), []);
+
+  const currentSegment = selectedStory?.segments[audio.currentSegmentIndex];
+  const activeSpeakerId = currentSegment?.speaker_id || null;
+  const currentSpeakerName = selectedStory?.characters.find((character) => character.id === activeSpeakerId)?.name
+    || activeSpeakerId
+    || undefined;
+
+  useEffect(() => {
+    document.body.classList.toggle("playing", audio.isPlaying);
+    return () => document.body.classList.remove("playing");
+  }, [audio.isPlaying]);
 
   return (
-    <div className="theatre-shell">
-      <Header
-        setupStatus={setupStatus}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenDoctor={() => setIsDoctorOpen(true)}
-      />
-
-      <div className="workspace-body">
-        {/* Left Story Rail */}
-        <StoryRail
-          stories={stories}
-          selectedStoryId={selectedStoryId}
-          onSelectStory={(id) => setSelectedStoryId(id)}
-          onAddStory={() => setIsAddOpen(true)}
-          onDeleteStory={(id) => setDeleteTargetId(id)}
+    <>
+      <div className="grain" aria-hidden="true" />
+      <div className="theatre-shell">
+        <Header
+          setupStatus={setupStatus}
+          onOpenSettings={handleOpenSettings}
+          onOpenDoctor={handleOpenDoctor}
         />
 
-        {/* Center Stage */}
-        <StoryScene
-          story={selectedStory}
-          currentSegmentIndex={audio.currentSegmentIndex}
-          activeOperation={activeOperation}
-          operationError={operationError}
-          onDismissError={() => setOperationError(null)}
-          onOpenSettings={() => setIsSettingsOpen(true)}
-          onAnalyze={handleAnalyze}
-          onRender={handleRender}
-          onCancelOperation={handleCancelOperation}
-          onDownload={handleDownloadStoryAudio}
-          isDownloading={isExporting}
+        <nav className="mobile-module-nav" aria-label="Workspace panels">
+          {(["library", "stage", "cast"] as MobilePanel[]).map((panel) => (
+            <button
+              type="button"
+              key={panel}
+              className={mobilePanel === panel ? "active" : ""}
+              aria-pressed={mobilePanel === panel}
+              onClick={() => setMobilePanel(panel)}
+            >
+              {panel === "stage" ? "Story" : panel[0].toUpperCase() + panel.slice(1)}
+            </button>
+          ))}
+        </nav>
+
+        <div className={`workspace-body mobile-panel-${mobilePanel}`}>
+          <StoryRail
+            stories={stories}
+            selectedStoryId={selectedStoryId}
+            onSelectStory={handleSelectStory}
+            onAddStory={handleOpenAdd}
+            onDeleteStory={handleRequestDelete}
+          />
+
+          <StoryScene
+            story={selectedStory}
+            isLoading={isStoryLoading}
+            currentSegmentIndex={audio.currentSegmentIndex}
+            segmentTime={audio.segmentTime}
+            segmentDuration={audio.segmentDuration}
+            isPlaying={audio.isPlaying}
+            activeOperation={activeOperation}
+            operationError={operationError || audio.error}
+            onDismissError={handleDismissError}
+            onOpenSettings={handleOpenSettings}
+            onAnalyze={handleAnalyze}
+            onRender={handleRender}
+            onCancelOperation={handleCancelOperation}
+            onDownload={handleDownloadStoryAudio}
+            isDownloading={isExporting}
+            onSeekSegment={audio.seekSegment}
+            onAddStory={handleOpenAdd}
+          />
+
+          <CastRail
+            characters={selectedStory?.characters || []}
+            voices={voices}
+            activeSpeakerId={activeSpeakerId}
+            isPlaying={audio.isPlaying}
+            onSelectCharacterVoice={handleSelectCharacterVoice}
+            onReassignCast={handleReassignCast}
+            disabled={!selectedStory || Boolean(activeOperation && ["pending", "running"].includes(activeOperation.state))}
+          />
+        </div>
+
+        <Transport
+          isPlaying={audio.isPlaying}
+          currentTime={audio.currentTime}
+          totalDuration={audio.totalDuration}
+          volume={audio.volume}
+          onPlay={audio.play}
+          onPause={audio.pause}
+          onPrev={audio.prev}
+          onNext={audio.next}
+          onSeek={audio.seekToTime}
+          onVolumeChange={audio.setVolume}
+          disabled={!selectedStory || selectedStory.rendered_count === 0}
+          currentSpeakerName={currentSpeakerName}
         />
 
-        {/* Right Cast Rail */}
-        <CastRail
-          characters={selectedStory?.characters || []}
-          onSelectCharacterVoice={(char) => setVoicePickerChar(char)}
-          onReassignCast={handleReassignCast}
-          disabled={!selectedStory}
+        <AddStoryModal
+          isOpen={isAddOpen}
+          onClose={() => setIsAddOpen(false)}
+          onStoryCreated={(storyId) => {
+            void refreshStories();
+            setSelectedStoryId(storyId);
+            setMobilePanel("stage");
+          }}
+        />
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          setupStatus={setupStatus}
+          onRefreshStatus={refreshProviderState}
+        />
+        <DoctorModal isOpen={isDoctorOpen} onClose={() => setIsDoctorOpen(false)} />
+        <DeleteModal
+          isOpen={Boolean(deleteTargetId)}
+          storyTitle={stories.find((story) => story.story_id === deleteTargetId)?.title || "this story"}
+          onClose={() => setDeleteTargetId(null)}
+          onConfirm={handleDeleteStoryConfirm}
+          loading={isDeleting}
+        />
+        <VoicePickerModal
+          isOpen={Boolean(voicePickerChar)}
+          character={voicePickerChar}
+          voices={voices}
+          onClose={() => setVoicePickerChar(null)}
+          onAssignVoice={handleAssignVoice}
         />
       </div>
-
-      {/* Bottom Transport Player */}
-      <Transport
-        isPlaying={audio.isPlaying}
-        currentTime={audio.currentTime}
-        totalDuration={audio.totalDuration}
-        volume={audio.volume}
-        onPlay={audio.play}
-        onPause={audio.pause}
-        onPrev={audio.prev}
-        onNext={audio.next}
-        onVolumeChange={audio.setVolume}
-        onDownload={handleDownloadStoryAudio}
-        downloadDisabled={!selectedStory || selectedStory.rendered_count === 0 || isExporting}
-        disabled={!selectedStory || selectedStory.rendered_count === 0}
-      />
-
-      {/* Modals */}
-      <AddStoryModal
-        isOpen={isAddOpen}
-        onClose={() => setIsAddOpen(false)}
-        onStoryCreated={(id) => {
-          refreshStories();
-          setSelectedStoryId(id);
-        }}
-      />
-
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        setupStatus={setupStatus}
-        onRefreshStatus={refreshSetup}
-      />
-
-      <DoctorModal
-        isOpen={isDoctorOpen}
-        onClose={() => setIsDoctorOpen(false)}
-      />
-
-      <DeleteModal
-        isOpen={Boolean(deleteTargetId)}
-        storyTitle={stories.find((s) => s.story_id === deleteTargetId)?.title || "this story"}
-        onClose={() => setDeleteTargetId(null)}
-        onConfirm={handleDeleteStoryConfirm}
-      />
-
-      <VoicePickerModal
-        isOpen={Boolean(voicePickerChar)}
-        character={voicePickerChar}
-        voices={voices}
-        onClose={() => setVoicePickerChar(null)}
-        onAssignVoice={handleAssignVoice}
-      />
-    </div>
+    </>
   );
 };
-

@@ -23,6 +23,7 @@ class SetupStatusResponse(BaseModel):
     ollama_model_available: bool
     kokoro_model_present: bool
     kokoro_voices_present: bool
+    kokoro_runtime_available: bool = False
     audio_output_available: bool
     ready: bool
 
@@ -122,4 +123,3 @@ class StoryExportResponse(BaseModel):
     size_bytes: int
     duration_seconds: float
     rendered_segments: int
-

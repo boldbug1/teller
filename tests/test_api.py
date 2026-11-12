@@ -271,7 +271,41 @@ async def test_vertical_slice_analyze_render_and_fetch_audio(
         cast = cast_res.json()
         assert len(cast) >= 1
 
+        # 4. Auto-cast replaces incompatible saved providers and persists every voice.
         char_id = cast[0]["id"]
+        incompatible_res = await client.patch(
+            f"/v1/stories/{story_id}/cast/{char_id}",
+            json={"voice_id": "legacy", "provider": "other-tts", "model": "old-model"},
+            headers=auth,
+        )
+        assert incompatible_res.status_code == 200
+
+        # Unrelated cache files from a previous provider must not mark the new cast as rendered.
+        stale_audio = config.paths.stories_dir / story_id / "audio" / "stale-provider.wav"
+        stale_audio.write_bytes(SAMPLE_WAV_BYTES)
+        detail_res = await client.get(f"/v1/stories/{story_id}", headers=auth)
+        assert detail_res.status_code == 200
+        assert detail_res.json()["rendered_count"] == 0
+
+        reassign_res = await client.post(
+            f"/v1/stories/{story_id}/reassign-voices", headers=auth
+        )
+        assert reassign_res.status_code == 200
+        reassign_op_id = reassign_res.json()["operation_id"]
+        for _ in range(50):
+            res = await client.get(f"/v1/operations/{reassign_op_id}", headers=auth)
+            op_status = res.json()
+            if op_status["state"] in ("completed", "failed"):
+                break
+            await asyncio.sleep(0.05)
+        assert op_status["state"] == "completed", f"Auto-cast failed: {op_status.get('error')}"
+
+        cast_res = await client.get(f"/v1/stories/{story_id}/cast", headers=auth)
+        cast = cast_res.json()
+        assert all(character["voice"]["provider"] == "fake-tts" for character in cast)
+        assert all(character["voice"]["model"] == "fake-tts-model" for character in cast)
+
+        # 5. A manual override remains available after auto-casting.
         patch_cast_res = await client.patch(
             f"/v1/stories/{story_id}/cast/{char_id}",
             json={"voice_id": "voice-2", "provider": "fake-tts", "model": "fake-tts-model"},
@@ -280,7 +314,7 @@ async def test_vertical_slice_analyze_render_and_fetch_audio(
         assert patch_cast_res.status_code == 200
         assert patch_cast_res.json()["voice"]["voice_id"] == "voice-2"
 
-        # 4. Trigger render
+        # 6. Trigger render
         render_res = await client.post(f"/v1/stories/{story_id}/render", headers=auth)
         assert render_res.status_code == 200
         render_op_id = render_res.json()["operation_id"]
@@ -294,7 +328,7 @@ async def test_vertical_slice_analyze_render_and_fetch_audio(
 
         assert op_status["state"] == "completed", f"Render failed: {op_status.get('error')}"
 
-        # 5. Fetch audio segment
+        # 7. Fetch audio segment
         audio_res = await client.get(f"/v1/stories/{story_id}/segments/0/audio", headers=auth)
         assert audio_res.status_code == 200
         assert audio_res.headers["content-type"] == "audio/wav"

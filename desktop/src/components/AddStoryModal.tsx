@@ -1,6 +1,7 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
-import { FileIcon, TrashIcon, UploadCloudIcon } from "./Icons";
+import { CloseIcon, FileIcon, TrashIcon, UploadCloudIcon } from "./Icons";
+import { useDialog } from "./useDialog";
 
 interface AddStoryModalProps {
   isOpen: boolean;
@@ -15,38 +16,46 @@ interface SelectedFile {
   path?: string;
 }
 
-export const AddStoryModal: React.FC<AddStoryModalProps> = ({
-  isOpen,
-  onClose,
-  onStoryCreated,
-}) => {
+const SUPPORTED_EXTENSIONS = new Set(["pdf", "docx", "md", "markdown", "txt"]);
+
+export const AddStoryModal: React.FC<AddStoryModalProps> = ({ isOpen, onClose, onStoryCreated }) => {
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useDialog(isOpen, onClose, !loading);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedFile(null);
+    setText("");
+    setError(null);
+    setDragActive(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleFileChange = (file: File) => {
+  const readBrowserFile = (file: File) => {
+    const extension = file.name.split(".").pop()?.toLowerCase() || "";
+    if (!SUPPORTED_EXTENSIONS.has(extension)) {
+      setError("Choose a PDF, DOCX, Markdown, or plain-text file.");
+      return;
+    }
+
     setError(null);
     const reader = new FileReader();
     reader.onload = () => {
-      const result = reader.result;
-      if (typeof result === "string") {
-        // Base64 string from data URL
-        const base64Data = result.includes(",") ? result.split(",")[1] : result;
-        setSelectedFile({
-          name: file.name,
-          size: file.size,
-          base64: base64Data,
-        });
-      }
+      if (typeof reader.result !== "string") return;
+      setSelectedFile({
+        name: file.name,
+        size: file.size,
+        base64: reader.result.includes(",") ? reader.result.split(",")[1] : reader.result,
+      });
     };
-    reader.onerror = () => {
-      setError("Failed to read the selected file.");
-    };
+    reader.onerror = () => setError("The selected file could not be read.");
     reader.readAsDataURL(file);
   };
 
@@ -57,207 +66,137 @@ export const AddStoryModal: React.FC<AddStoryModalProps> = ({
         const { open } = await import("@tauri-apps/plugin-dialog");
         const selected = await open({
           multiple: false,
-          filters: [
-            {
-              name: "Story Documents",
-              extensions: ["pdf", "docx", "md", "txt", "markdown"],
-            },
-          ],
+          filters: [{
+            name: "Story documents",
+            extensions: ["pdf", "docx", "md", "txt", "markdown"],
+          }],
         });
-        if (selected && typeof selected === "string") {
-          const name = selected.split(/[\\/]/).pop() || selected;
-          setSelectedFile({
-            name,
-            path: selected,
-          });
+        if (selected === null) return;
+        if (typeof selected === "string") {
+          setSelectedFile({ name: selected.split(/[\\/]/).pop() || selected, path: selected });
           return;
         }
-      } catch (err) {
-        console.warn("Tauri dialog error, falling back to input", err);
+      } catch (dialogError) {
+        console.warn("Native file dialog unavailable", dialogError);
       }
     }
-    // Fallback to HTML file input
     fileInputRef.current?.click();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const clearSelectedFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (!selectedFile && !text.trim()) {
-      setError("Please choose a story file (PDF, Word, MD, TXT) or paste your text.");
+      setError("Choose a story file or paste the story text.");
       return;
     }
 
     setLoading(true);
     setError(null);
-
     try {
-      if (selectedFile) {
-        const summary = await api.uploadStoryFile({
-          name: selectedFile.name,
-          base64: selectedFile.base64,
-          path: selectedFile.path,
-        });
-        onStoryCreated(summary.story_id);
-      } else {
-        const summary = await api.pasteStory(text.trim());
-        onStoryCreated(summary.story_id);
-      }
+      const summary = selectedFile
+        ? await api.uploadStoryFile(selectedFile)
+        : await api.pasteStory(text.trim());
+      onStoryCreated(summary.story_id);
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to add story");
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "The story could not be added.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="add-story-title">
-      <div className="modal-dialog">
-        <h2 id="add-story-title" className="modal-title">
-          Add Story
-        </h2>
-        <p style={{ fontSize: "0.82rem", color: "#666", marginTop: "-6px", marginBottom: "14px" }}>
-          Upload a file or paste your story. The title and characters are detected automatically.
-        </p>
-
-        {error && (
-          <div
-            style={{
-              padding: "8px 12px",
-              background: "#f8d7da",
-              border: "1px solid #f5c6cb",
-              color: "#721c24",
-              marginBottom: "14px",
-              borderRadius: "2px",
-              fontSize: "0.85rem",
-            }}
-          >
-            {error}
+    <div className="modal-overlay">
+      <div
+        ref={dialogRef}
+        className="modal-dialog add-story-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-story-title"
+        tabIndex={-1}
+      >
+        <div className="modal-header">
+          <div>
+            <h2 id="add-story-title" className="modal-title">Add a Story</h2>
           </div>
-        )}
+          <button type="button" className="modal-close-btn" onClick={onClose} disabled={loading} aria-label="Close add story">
+            <CloseIcon size={15} />
+          </button>
+        </div>
+        <p className="modal-intro">Import a file or paste text. Teller will detect the title, characters, and dialogue.</p>
+
+        {error ? <div className="form-alert error" role="alert">{error}</div> : null}
 
         <form onSubmit={handleSubmit}>
-          {/* File Upload Zone */}
           <input
+            className="file-input-hidden"
             type="file"
             ref={fileInputRef}
-            style={{ display: "none" }}
-            accept=".pdf,.docx,.doc,.md,.markdown,.txt"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) handleFileChange(file);
+            accept=".pdf,.docx,.md,.markdown,.txt"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) readBrowserFile(file);
             }}
           />
 
           {!selectedFile ? (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
+            <button
+              type="button"
+              className={`upload-dropzone ${dragActive ? "is-dragging" : ""}`}
+              onClick={handleNativeBrowse}
+              onDragOver={(event) => {
+                event.preventDefault();
                 setDragActive(true);
               }}
               onDragLeave={() => setDragActive(false)}
-              onDrop={(e) => {
-                e.preventDefault();
+              onDrop={(event) => {
+                event.preventDefault();
                 setDragActive(false);
-                const file = e.dataTransfer.files?.[0];
-                if (file) handleFileChange(file);
-              }}
-              onClick={handleNativeBrowse}
-              style={{
-                border: `2px dashed ${dragActive ? "var(--rust)" : "var(--ink)"}`,
-                borderRadius: "4px",
-                padding: "24px 16px",
-                textAlign: "center",
-                background: dragActive ? "var(--paper-deep)" : "var(--paper-card)",
-                cursor: "pointer",
-                marginBottom: "16px",
-                transition: "all 0.15s ease",
+                const file = event.dataTransfer.files?.[0];
+                if (file) readBrowserFile(file);
               }}
             >
-              <UploadCloudIcon size={32} style={{ color: "var(--rust)", marginBottom: "6px" }} />
-              <div style={{ fontWeight: "bold", fontSize: "0.95rem", marginBottom: "4px" }}>
-                Choose or drop a story file
-              </div>
-              <div style={{ fontSize: "0.8rem", color: "#666" }}>
-                Supports <strong>PDF, Word (.docx), Markdown (.md), or Plain Text (.txt)</strong>
-              </div>
-            </div>
+              <UploadCloudIcon size={30} />
+              <strong>Choose or drop a story file</strong>
+              <span>PDF, DOCX, Markdown, or plain text</span>
+            </button>
           ) : (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "12px 14px",
-                background: "var(--paper-deep)",
-                border: "1.5px solid var(--ink)",
-                borderRadius: "3px",
-                marginBottom: "16px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <FileIcon size={24} style={{ color: "var(--rust)" }} />
-                <div>
-                  <div style={{ fontWeight: "bold", fontSize: "0.92rem" }}>
-                    {selectedFile.name}
-                  </div>
-                  <div style={{ fontSize: "0.75rem", color: "#666" }}>
-                    {selectedFile.size ? `${Math.round(selectedFile.size / 1024)} KB • ` : ""}
-                    Ready to import
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedFile(null)}
-                title="Remove file"
-                aria-label="Remove file"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  color: "var(--rust)",
-                  padding: "4px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                }}
-              >
-                <TrashIcon size={16} />
+            <div className="selected-file-card">
+              <span className="selected-file-icon"><FileIcon size={21} /></span>
+              <span className="selected-file-copy">
+                <strong>{selectedFile.name}</strong>
+                <span>{selectedFile.size ? `${Math.max(1, Math.round(selectedFile.size / 1024))} KB / ` : ""}Ready to import</span>
+              </span>
+              <button type="button" className="remove-file-btn" onClick={clearSelectedFile} aria-label="Remove file">
+                <TrashIcon size={15} />
               </button>
             </div>
           )}
 
-          {/* Or Paste Text Directly */}
-          {!selectedFile && (
+          {!selectedFile ? (
             <>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "10px 0" }}>
-                <hr style={{ flex: 1, borderColor: "#ccc" }} />
-                <span style={{ fontSize: "0.75rem", color: "#777", textTransform: "uppercase", fontWeight: "bold" }}>
-                  Or paste text
-                </span>
-                <hr style={{ flex: 1, borderColor: "#ccc" }} />
-              </div>
-
+              <div className="form-divider"><span>or paste text</span></div>
+              <label className="sr-only" htmlFor="story-text">Story text</label>
               <textarea
-                rows={6}
-                placeholder="Paste story text here (e.g. Chapter 1: The Monkey's Paw...)"
+                id="story-text"
+                className="story-textarea"
+                rows={7}
+                placeholder="Once upon a time..."
                 value={text}
-                onChange={(e) => setText(e.target.value)}
-                style={{ width: "100%", marginBottom: "16px" }}
+                onChange={(event) => setText(event.target.value)}
               />
             </>
-          )}
+          ) : null}
 
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={loading}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={loading || (!selectedFile && !text.trim())}
-            >
-              {loading ? "Adding Story..." : "Add Story"}
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={loading}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={loading || (!selectedFile && !text.trim())}>
+              {loading ? "Adding story..." : "Add to Library"}
             </button>
           </div>
         </form>

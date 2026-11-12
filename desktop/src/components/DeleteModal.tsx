@@ -1,4 +1,6 @@
 import React from "react";
+import { CloseIcon, TrashIcon } from "./Icons";
+import { useDialog } from "./useDialog";
 
 interface DeleteModalProps {
   isOpen: boolean;
@@ -15,16 +17,32 @@ export const DeleteModal: React.FC<DeleteModalProps> = ({
   onConfirm,
   loading = false,
 }) => {
+  const dialogRef = useDialog(isOpen, onClose, !loading);
   if (!isOpen) return null;
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="delete-title">
-      <div className="modal-dialog" style={{ maxWidth: "440px" }}>
-        <h2 id="delete-title" className="modal-title" style={{ color: "var(--rust)" }}>
-          Delete Story
-        </h2>
-        <p style={{ margin: "14px 0", lineHeight: 1.5 }}>
-          Are you sure you want to delete <strong>"{storyTitle}"</strong>? This will remove the story text, character cast, and all rendered audio files.
+    <div className="modal-overlay">
+      <div
+        ref={dialogRef}
+        className="modal-dialog delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-title"
+        aria-describedby="delete-description"
+        tabIndex={-1}
+      >
+        <div className="modal-header">
+          <div>
+            <span className="section-kicker">Confirmation</span>
+            <h2 id="delete-title" className="modal-title">Delete Story</h2>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose} disabled={loading} aria-label="Close delete confirmation">
+            <CloseIcon size={15} />
+          </button>
+        </div>
+        <div className="delete-warning-icon" aria-hidden="true"><TrashIcon size={22} /></div>
+        <p id="delete-description" className="delete-description">
+          Delete <strong>"{storyTitle}"</strong>? Its text, characters, and generated audio will be removed permanently.
         </p>
 
         <div className="modal-actions">
@@ -33,8 +51,7 @@ export const DeleteModal: React.FC<DeleteModalProps> = ({
           </button>
           <button
             type="button"
-            className="btn-primary"
-            style={{ background: "var(--rust)" }}
+            className="btn-danger"
             onClick={onConfirm}
             disabled={loading}
           >
@@ -45,4 +62,3 @@ export const DeleteModal: React.FC<DeleteModalProps> = ({
     </div>
   );
 };
-

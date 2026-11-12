@@ -67,6 +67,19 @@ class AudioCache:
             return None
         return content
 
+    def has(self, key: str) -> bool:
+        path = self.path(key)
+        if not path.exists():
+            return False
+        try:
+            with wave.open(str(path), "rb") as wav_file:
+                valid = wav_file.getnframes() > 0 and wav_file.getframerate() > 0
+        except (EOFError, OSError, wave.Error):
+            valid = False
+        if not valid:
+            path.unlink(missing_ok=True)
+        return valid
+
     def put(self, key: str, content: bytes) -> Path:
         validate_wav(content)
         path = self.path(key)

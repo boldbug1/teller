@@ -12,32 +12,35 @@ class ApiClient {
   private port: number = 8000;
   private token: string = "";
   private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
   private ws: WebSocket | null = null;
   private eventListeners: Set<(event: OperationEvent) => void> = new Set();
 
   public async init(): Promise<void> {
     if (this.initialized) return;
+    if (this.initPromise) return this.initPromise;
 
-    // Check if running inside Tauri
-    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const info = await invoke<BackendInfo>("get_backend_info");
-        this.port = info.port;
-        this.token = info.token;
-      } catch (err) {
-        console.warn("Could not retrieve Tauri backend info, falling back to defaults", err);
+    this.initPromise = (async () => {
+      if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const info = await invoke<BackendInfo>("get_backend_info");
+          this.port = info.port;
+          this.token = info.token;
+        } catch (err) {
+          console.warn("Could not retrieve Tauri backend info, falling back to defaults", err);
+        }
+      } else {
+        const meta = import.meta as any;
+        const envPort = meta.env?.VITE_API_PORT;
+        if (envPort) this.port = parseInt(envPort, 10);
+        this.token = meta.env?.VITE_API_TOKEN || "";
       }
-    } else {
-      // Development mode
-      const meta = import.meta as any;
-      const envPort = meta.env?.VITE_API_PORT;
-      if (envPort) this.port = parseInt(envPort, 10);
-      this.token = meta.env?.VITE_API_TOKEN || "";
-    }
 
-    this.initialized = true;
-    this.connectWebSocket();
+      this.initialized = true;
+      this.connectWebSocket();
+    })();
+    return this.initPromise;
   }
 
   public setConnection(port: number, token: string): void {
@@ -259,7 +262,10 @@ class ApiClient {
       method: "POST",
       headers: this.headers,
     });
-    if (!res.ok) throw new Error("Failed to start voice reassignment");
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || "Failed to start voice reassignment");
+    }
     return res.json();
   }
 
@@ -298,10 +304,11 @@ class ApiClient {
   }
 
   public async cancelOperation(opId: string): Promise<void> {
-    await fetch(`${this.baseUrl}/v1/operations/${opId}/cancel`, {
+    const res = await fetch(`${this.baseUrl}/v1/operations/${opId}/cancel`, {
       method: "POST",
       headers: this.headers,
     });
+    if (!res.ok) throw new Error("Failed to cancel operation");
   }
 
   public async fetchSegmentAudio(storyId: string, segmentIndex: number): Promise<ArrayBuffer> {
@@ -314,6 +321,15 @@ class ApiClient {
 
   public getStoryDownloadUrl(storyId: string): string {
     return `${this.baseUrl}/v1/stories/${storyId}/download`;
+  }
+
+  public async downloadStoryAudio(storyId: string): Promise<Blob> {
+    const res = await fetch(this.getStoryDownloadUrl(storyId), { headers: this.headers });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || `Download failed: HTTP ${res.status}`);
+    }
+    return res.blob();
   }
 
   public async exportStoryAudio(

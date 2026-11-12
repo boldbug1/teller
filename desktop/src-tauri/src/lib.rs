@@ -1,7 +1,7 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use tauri::{Manager, State, WindowEvent};
@@ -23,6 +23,19 @@ pub struct AppState {
     pub child: Mutex<Option<Child>>,
 }
 
+fn sidecar_candidates(parent: &Path) -> [PathBuf; 5] {
+    [
+        // Tauri copies an externalBin beside the app without the target triple.
+        parent.join("teller-sidecar.exe"),
+        parent.join("teller-sidecar-x86_64-pc-windows-msvc.exe"),
+        parent
+            .join("binaries")
+            .join("teller-sidecar-x86_64-pc-windows-msvc.exe"),
+        PathBuf::from("desktop/src-tauri/binaries/teller-sidecar-x86_64-pc-windows-msvc.exe"),
+        PathBuf::from("src-tauri/binaries/teller-sidecar-x86_64-pc-windows-msvc.exe"),
+    ]
+}
+
 fn generate_token() -> String {
     let mut rng = rand::thread_rng();
     let bytes: [u8; 16] = rng.gen();
@@ -42,13 +55,7 @@ pub fn spawn_sidecar(token: &str) -> Result<(Child, u16), String> {
     let exe_dir = std::env::current_exe().map_err(|e| e.to_string())?;
     let parent = exe_dir.parent().unwrap_or(&exe_dir);
 
-    let candidates = [
-        parent.join("teller-sidecar-x86_64-pc-windows-msvc.exe"),
-        parent.join("teller-sidecar.exe"),
-        parent.join("binaries").join("teller-sidecar-x86_64-pc-windows-msvc.exe"),
-        PathBuf::from("desktop/src-tauri/binaries/teller-sidecar-x86_64-pc-windows-msvc.exe"),
-        PathBuf::from("src-tauri/binaries/teller-sidecar-x86_64-pc-windows-msvc.exe"),
-    ];
+    let candidates = sidecar_candidates(parent);
 
     let mut command: Command;
 
@@ -78,7 +85,9 @@ pub fn spawn_sidecar(token: &str) -> Result<(Child, u16), String> {
     command.stdout(Stdio::piped());
     command.stderr(Stdio::inherit());
 
-    let mut child = command.spawn().map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
     let stdout = child
         .stdout
         .take()
@@ -97,7 +106,8 @@ pub fn spawn_sidecar(token: &str) -> Result<(Child, u16), String> {
         }
     }
 
-    let detected_port = port.ok_or_else(|| "Sidecar exited before signaling readiness".to_string())?;
+    let detected_port =
+        port.ok_or_else(|| "Sidecar exited before signaling readiness".to_string())?;
     Ok((child, detected_port))
 }
 
@@ -132,7 +142,10 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![get_backend_info])
         .on_window_event(|window, event| {
-            if matches!(event, WindowEvent::Destroyed | WindowEvent::CloseRequested { .. }) {
+            if matches!(
+                event,
+                WindowEvent::Destroyed | WindowEvent::CloseRequested { .. }
+            ) {
                 let state = window.state::<AppState>();
                 if let Ok(mut guard) = state.child.lock() {
                     if let Some(mut child) = guard.take() {
@@ -162,7 +175,8 @@ mod tests {
     #[test]
     fn test_ready_event_parsing() {
         let line = r#"{"event": "ready", "port": 12345, "host": "127.0.0.1"}"#;
-        let ready: ReadyEvent = serde_json::from_str(line).expect("Must parse valid readiness line");
+        let ready: ReadyEvent =
+            serde_json::from_str(line).expect("Must parse valid readiness line");
         assert_eq!(ready.event, "ready");
         assert_eq!(ready.port, 12345);
     }
@@ -175,5 +189,13 @@ mod tests {
         assert_eq!(token2.len(), 32);
         assert_ne!(token1, token2);
     }
-}
 
+    #[test]
+    fn test_prefers_tauri_bundled_sidecar_name() {
+        let candidates = sidecar_candidates(Path::new("target/release"));
+        assert_eq!(
+            candidates[0],
+            PathBuf::from("target/release").join("teller-sidecar.exe")
+        );
+    }
+}

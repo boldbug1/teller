@@ -3,4 +3,3 @@
 fn main() {
     teller_desktop_lib::run();
 }
-

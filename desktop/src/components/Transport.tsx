@@ -1,5 +1,5 @@
-import React from "react";
-import { DownloadIcon, NextIcon, PauseIcon, PlayIcon, PrevIcon, VolumeIcon } from "./Icons";
+import React, { useRef, useState } from "react";
+import { NextIcon, PauseIcon, PlayIcon, PrevIcon, VolumeIcon, VolumeMuteIcon } from "./Icons";
 
 interface TransportProps {
   isPlaying: boolean;
@@ -10,14 +10,14 @@ interface TransportProps {
   onPause: () => void;
   onPrev: () => void;
   onNext: () => void;
-  onVolumeChange: (vol: number) => void;
-  onDownload?: () => void;
-  downloadDisabled?: boolean;
+  onSeek: (seconds: number) => void;
+  onVolumeChange: (volume: number) => void;
   disabled?: boolean;
+  currentSpeakerName?: string;
 }
 
 function formatTime(seconds: number): string {
-  if (isNaN(seconds) || seconds < 0) return "0:00";
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
@@ -32,87 +32,113 @@ export const Transport: React.FC<TransportProps> = ({
   onPause,
   onPrev,
   onNext,
+  onSeek,
   onVolumeChange,
-  onDownload,
-  downloadDisabled = false,
   disabled = false,
+  currentSpeakerName,
 }) => {
-  const progressRatio = totalDuration > 0 ? Math.min(1, currentTime / totalDuration) : 0;
+  const [draftTime, setDraftTime] = useState<number | null>(null);
+  const isDragging = useRef(false);
+  const duration = Math.max(totalDuration, 0.1);
+  const displayedTime = Math.min(draftTime ?? currentTime, duration);
+  const progressRatio = totalDuration > 0 ? Math.min(1, displayedTime / totalDuration) : 0;
 
   return (
-    <footer className="transport-bar" aria-label="Playback Transport">
-      <div className="transport-controls">
+    <footer className="transport-bar" aria-label="Playback transport">
+      <div className="media-capsule-dock" role="toolbar" aria-label="Playback controls">
         <button
-          className="transport-btn"
+          type="button"
+          className="capsule-btn"
           onClick={onPrev}
           disabled={disabled}
-          title="Previous segment"
+          title="Previous dialogue line"
           aria-label="Previous segment"
-          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
         >
           <PrevIcon size={14} />
         </button>
-
         <button
-          className="play-button"
+          type="button"
+          className="capsule-btn play-btn"
           onClick={isPlaying ? onPause : onPlay}
           disabled={disabled}
-          title={isPlaying ? "Pause" : "Play"}
+          title={isPlaying ? "Pause playback" : "Play story"}
           aria-label={isPlaying ? "Pause" : "Play"}
-          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
         >
-          {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={16} style={{ marginLeft: "2px" }} />}
+          {isPlaying ? <PauseIcon size={18} /> : <PlayIcon size={18} />}
         </button>
-
         <button
-          className="transport-btn"
+          type="button"
+          className="capsule-btn"
           onClick={onNext}
           disabled={disabled}
-          title="Next segment"
+          title="Next dialogue line"
           aria-label="Next segment"
-          style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
         >
           <NextIcon size={14} />
         </button>
       </div>
 
       <div className="scrubber-section">
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", fontFamily: "var(--font-sans)", color: "#555" }}>
-          <span>{formatTime(currentTime)}</span>
+        <div className="scrubber-time-row">
+          <span>{formatTime(displayedTime)}</span>
+          {currentSpeakerName ? (
+            <span className="scrubber-speaker-tag">{currentSpeakerName}</span>
+          ) : (
+            <span className="scrubber-speaker-tag is-idle">Ready for curtain</span>
+          )}
           <span>{formatTime(totalDuration)}</span>
         </div>
-        <div className="scrubber-track">
-          <div className="scrubber-progress" style={{ width: `${progressRatio * 100}%` }} />
-        </div>
+        <input
+          className="transport-scrubber"
+          type="range"
+          min={0}
+          max={duration}
+          step={0.05}
+          value={displayedTime}
+          disabled={disabled || totalDuration <= 0}
+          aria-label="Story progress"
+          style={{ "--playback-progress": `${progressRatio * 100}%` } as React.CSSProperties}
+          onPointerDown={(event) => {
+            isDragging.current = true;
+            setDraftTime(Number(event.currentTarget.value));
+          }}
+          onChange={(event) => {
+            const nextTime = Number(event.currentTarget.value);
+            if (isDragging.current) setDraftTime(nextTime);
+            else onSeek(nextTime);
+          }}
+          onPointerUp={(event) => {
+            isDragging.current = false;
+            setDraftTime(null);
+            onSeek(Number(event.currentTarget.value));
+          }}
+          onPointerCancel={() => {
+            isDragging.current = false;
+            setDraftTime(null);
+          }}
+        />
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <VolumeIcon size={16} style={{ color: "#555" }} />
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={volume}
-            onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-            style={{ width: "80px", cursor: "pointer", margin: 0 }}
-            aria-label="Volume slider"
-          />
-        </div>
-
-        {onDownload && (
-          <button
-            className="transport-btn"
-            onClick={onDownload}
-            disabled={disabled || downloadDisabled}
-            title={downloadDisabled ? "Render voices to download audio" : "Download full story audio (WAV)"}
-            aria-label="Download full story audio"
-            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center" }}
-          >
-            <DownloadIcon size={15} />
-          </button>
-        )}
+      <div className="volume-dock">
+        <button
+          type="button"
+          className="transport-icon-btn"
+          onClick={() => onVolumeChange(volume > 0 ? 0 : 1)}
+          title={volume === 0 ? "Unmute" : "Mute"}
+          aria-label={volume === 0 ? "Unmute" : "Mute"}
+        >
+          {volume === 0 ? <VolumeMuteIcon size={15} /> : <VolumeIcon size={15} />}
+        </button>
+        <input
+          className="volume-slider"
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={volume}
+          onChange={(event) => onVolumeChange(Number(event.target.value))}
+          aria-label="Volume"
+        />
       </div>
     </footer>
   );

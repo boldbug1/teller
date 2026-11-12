@@ -40,3 +40,8 @@ def test_cache_rejects_invalid_audio_and_reads_valid_audio(tmp_path) -> None:
     content = wav_bytes()
     cache.put("good", content)
     assert cache.get("good") == content
+    assert cache.has("good") is True
+
+    cache.path("corrupt").write_bytes(b"not audio")
+    assert cache.has("corrupt") is False
+    assert not cache.path("corrupt").exists()

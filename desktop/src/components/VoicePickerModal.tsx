@@ -1,13 +1,15 @@
-import React, { useState } from "react";
+import React, { useDeferredValue, useEffect, useState } from "react";
 import { Character, VoiceItem } from "../types";
-import { CheckIcon } from "./Icons";
+import { Avatar } from "./Avatar";
+import { CheckIcon, CloseIcon, MicIcon } from "./Icons";
+import { useDialog } from "./useDialog";
 
 interface VoicePickerModalProps {
   isOpen: boolean;
   character: Character | null;
   voices: VoiceItem[];
   onClose: () => void;
-  onAssignVoice: (characterId: string, voiceId: string) => void;
+  onAssignVoice: (characterId: string, voiceId: string) => void | Promise<void>;
 }
 
 export const VoicePickerModal: React.FC<VoicePickerModalProps> = ({
@@ -18,83 +20,117 @@ export const VoicePickerModal: React.FC<VoicePickerModalProps> = ({
   onAssignVoice,
 }) => {
   const [filter, setFilter] = useState("");
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const deferredFilter = useDeferredValue(filter);
+  const dialogRef = useDialog(isOpen, onClose, !assigningId);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFilter("");
+    setAssigningId(null);
+    setError(null);
+  }, [character?.id, isOpen]);
 
   if (!isOpen || !character) return null;
 
-  const filteredVoices = voices.filter((v) => {
-    const q = filter.toLowerCase();
-    return (
-      v.name.toLowerCase().includes(q) ||
-      v.id.toLowerCase().includes(q) ||
-      (v.gender && v.gender.toLowerCase().includes(q)) ||
-      v.traits.some((t) => t.toLowerCase().includes(q))
-    );
-  });
+  const query = deferredFilter.trim().toLowerCase();
+  const filteredVoices = query
+    ? voices.filter((voice) => {
+        const searchable = [voice.name, voice.id, voice.gender, voice.age, voice.language, ...voice.traits]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return searchable.includes(query);
+      })
+    : voices;
+
+  const assignVoice = async (voiceId: string) => {
+    setAssigningId(voiceId);
+    setError(null);
+    try {
+      await onAssignVoice(character.id, voiceId);
+      onClose();
+    } catch (assignError) {
+      setError(assignError instanceof Error ? assignError.message : "The voice could not be assigned.");
+      setAssigningId(null);
+    }
+  };
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="voice-modal-title">
-      <div className="modal-dialog">
-        <h2 id="voice-modal-title" className="modal-title">
-          Assign Voice for {character.name}
-        </h2>
+    <div className="modal-overlay">
+      <div
+        ref={dialogRef}
+        className="modal-dialog voice-picker-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voice-modal-title"
+        tabIndex={-1}
+      >
+        <div className="modal-header voice-picker-header">
+          <Avatar name={character.name} characterId={character.id} traits={character.traits} size={48} />
+          <div className="modal-header-copy">
+            <span className="section-kicker">Casting desk</span>
+            <h2 id="voice-modal-title" className="modal-title">Voice for {character.name}</h2>
+          </div>
+          <button type="button" className="modal-close-btn" onClick={onClose} disabled={Boolean(assigningId)} aria-label="Close voice picker">
+            <CloseIcon size={15} />
+          </button>
+        </div>
 
-        <input
-          type="text"
-          placeholder="Filter voices by name, gender, traits..."
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          autoFocus
-        />
+        <label className="sr-only" htmlFor="voice-search">Search available voices</label>
+        <div className="voice-search-wrap">
+          <MicIcon size={16} />
+          <input
+            id="voice-search"
+            type="search"
+            placeholder="Search name, language, or character..."
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            data-autofocus
+          />
+          <span>{filteredVoices.length} voices</span>
+        </div>
 
-        <div style={{ maxHeight: "320px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px", margin: "12px 0" }}>
+        {error ? <div className="form-alert error" role="alert">{error}</div> : null}
+
+        <div className="voice-option-list" aria-label="Available voices">
           {filteredVoices.length === 0 ? (
-            <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
-              No voices match your filter.
-            </div>
+            <div className="modal-empty-state">No voices match "{deferredFilter}".</div>
           ) : (
             filteredVoices.map((voice) => {
               const isSelected = character.voice?.voice_id === voice.id;
+              const isAssigning = assigningId === voice.id;
+              const details = [voice.gender, voice.age, voice.language, ...voice.traits.slice(0, 2)]
+                .filter(Boolean)
+                .join(" / ");
               return (
-                <div
+                <button
+                  type="button"
                   key={voice.id}
-                  onClick={() => {
-                    onAssignVoice(character.id, voice.id);
-                    onClose();
-                  }}
-                  style={{
-                    padding: "10px 14px",
-                    border: "1.5px solid var(--ink)",
-                    borderRadius: "3px",
-                    background: isSelected ? "var(--gold)" : "var(--paper-card)",
-                    cursor: "pointer",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
+                  className={`voice-option ${isSelected ? "is-selected" : ""}`}
+                  aria-pressed={isSelected}
+                  disabled={Boolean(assigningId)}
+                  onClick={() => void assignVoice(voice.id)}
                 >
-                  <div>
-                    <div style={{ fontWeight: "bold", fontSize: "0.95rem", display: "flex", alignItems: "center", gap: "6px" }}>
-                      {voice.name}
-                      {isSelected && <CheckIcon size={14} style={{ color: "var(--ink)" }} />}
-                    </div>
-                    <div style={{ fontSize: "0.75rem", color: "#555" }}>
-                      {voice.gender ? `${voice.gender} • ` : ""}
-                      {voice.traits.join(", ")}
-                    </div>
-                  </div>
-                  <span style={{ fontSize: "0.8rem", color: "#444", fontFamily: "var(--font-sans)" }}>
-                    {voice.id}
+                  <span className="voice-option-mark" aria-hidden="true">
+                    {isSelected ? <CheckIcon size={15} /> : voice.name.slice(0, 1).toUpperCase()}
                   </span>
-                </div>
+                  <span className="voice-option-copy">
+                    <strong>{voice.name}</strong>
+                    <span>{details || "General purpose voice"}</span>
+                  </span>
+                  <span className="voice-option-state">
+                    {isAssigning ? "Assigning..." : isSelected ? "Current" : "Choose"}
+                  </span>
+                </button>
               );
             })
           )}
         </div>
 
         <div className="modal-actions">
-          <button type="button" className="btn-secondary" onClick={onClose}>
-            Close
-          </button>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={Boolean(assigningId)}>Close</button>
         </div>
       </div>
     </div>

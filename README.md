@@ -13,14 +13,14 @@ On Windows, simply run:
 start.bat
 ```
 
-> **That's it!** `start.bat` automatically launches the packaged desktop application and connects to the native Python engine sidecar in the background. No manual server startup required.
+> **That's it!** In a source checkout with Node.js and Rust installed, `start.bat` launches the latest code through Tauri development mode. Use `start.bat --release` to launch the existing packaged binary instead.
 
 ### What you can do right away:
 1. **Import Stories**: Click **+ Add Story** to paste text or import `.txt`, `.md`, `.pdf`, or `.docx` documents with automatic title detection.
 2. **Analyze & Cast**: Click **Analyze Story** to parse characters and dialogue using **Groq** (recommended, sub-second Llama 3.3), **Gemini**, **Ollama** (local), or the built-in offline **Rule-Based Engine**.
 3. **Assign Voices**: Customize character voices in **The Cast** rail using **Kokoro** (100% offline), **ElevenLabs**, or **Gemini**.
 4. **Render Voices**: Synthesize speech with live progress tracking and zero duplicate API calls (deterministic cache).
-5. **Download Master Audio**: Click **Download Audio** (on the stage or in the transport player) to save a clean, stitched `.wav` audiobook to your computer.
+5. **Download Master Audio**: Click **Download Audio** on the stage to save a clean, stitched `.wav` audiobook to your computer.
 
 ---
 

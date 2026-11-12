@@ -30,10 +30,16 @@ $TargetName = "teller-sidecar-x86_64-pc-windows-msvc"
     --specpath "$RootDir\build" `
     --paths "$RootDir\src" `
     --collect-all "teller" `
+    --collect-all "kokoro_onnx" `
+    --collect-all "espeakng_loader" `
+    --collect-all "phonemizer" `
     --hidden-import "uvicorn" `
     --hidden-import "fastapi" `
     --hidden-import "starlette" `
     "$RootDir\src\teller\server.py"
 
-Write-Host "Sidecar successfully built at $OutputDir\$TargetName.exe" -ForegroundColor Green
+if ($LASTEXITCODE -ne 0) {
+    throw "PyInstaller failed with exit code $LASTEXITCODE"
+}
 
+Write-Host "Sidecar successfully built at $OutputDir\$TargetName.exe" -ForegroundColor Green

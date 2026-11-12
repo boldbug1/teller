@@ -68,6 +68,7 @@ export interface SetupStatus {
   ollama_model_available: boolean;
   kokoro_model_present: boolean;
   kokoro_voices_present: boolean;
+  kokoro_runtime_available: boolean;
   audio_output_available: boolean;
   ready: boolean;
 }
@@ -95,4 +96,3 @@ export interface BackendInfo {
   port: number;
   token: string;
 }
-

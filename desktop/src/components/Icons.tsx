@@ -340,4 +340,228 @@ export const DownloadIcon: React.FC<IconProps> = ({ size = 16, style, className 
   </svg>
 );
 
+export const SparklesIcon: React.FC<IconProps> = ({ size = 16, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
+    <path d="M19 4v4" />
+    <path d="M21 6h-4" />
+    <path d="M3 18v2" />
+    <path d="M4 19H2" />
+  </svg>
+);
+
+export const WaveformIcon: React.FC<IconProps> = ({ size = 16, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M2 10v4" />
+    <path d="M6 7v10" />
+    <path d="M10 4v16" />
+    <path d="M14 8v8" />
+    <path d="M18 5v14" />
+    <path d="M22 11v2" />
+  </svg>
+);
+
+export const SlidersIcon: React.FC<IconProps> = ({ size = 16, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <line x1="4" y1="21" x2="4" y2="14" />
+    <line x1="4" y1="10" x2="4" y2="3" />
+    <line x1="12" y1="21" x2="12" y2="12" />
+    <line x1="12" y1="8" x2="12" y2="3" />
+    <line x1="20" y1="21" x2="20" y2="16" />
+    <line x1="20" y1="12" x2="20" y2="3" />
+    <line x1="1" y1="14" x2="7" y2="14" />
+    <line x1="9" y1="8" x2="15" y2="8" />
+    <line x1="17" y1="16" x2="23" y2="16" />
+  </svg>
+);
+
+export const CloseIcon: React.FC<IconProps> = ({ size = 16, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+export const VolumeMuteIcon: React.FC<IconProps> = ({ size = 16, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+    <line x1="23" y1="9" x2="17" y2="15" />
+    <line x1="17" y1="9" x2="23" y2="15" />
+  </svg>
+);
+
+export const EqualizerBars: React.FC<{ active?: boolean; className?: string; color?: string }> = ({
+  active = true,
+  className = "",
+  color = "currentColor",
+}) => (
+  <span
+    className={`equalizer-badge ${active ? "active" : ""} ${className}`}
+    style={{ color }}
+    aria-label="Audio active"
+  >
+    <span className="bar bar-1" />
+    <span className="bar bar-2" />
+    <span className="bar bar-3" />
+  </span>
+);
+
+export const MacTrafficLights: React.FC<{
+  onClose?: () => void;
+  onMinimize?: () => void;
+  onMaximize?: () => void;
+  className?: string;
+}> = ({ onClose, onMinimize, onMaximize, className = "" }) => (
+  <div className={`mac-traffic-lights ${className}`} aria-label="Window controls">
+    <button
+      type="button"
+      className="traffic-dot traffic-close"
+      onClick={onClose}
+      title="Close window"
+      aria-label="Close window"
+    />
+    <button
+      type="button"
+      className="traffic-dot traffic-min"
+      onClick={onMinimize}
+      title="Minimize window"
+      aria-label="Minimize window"
+    />
+    <button
+      type="button"
+      className="traffic-dot traffic-max"
+      onClick={onMaximize}
+      title="Toggle fullscreen"
+      aria-label="Toggle fullscreen"
+    />
+  </div>
+);
+
+export const WinMinimizeIcon: React.FC<IconProps> = ({ size = 11, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M1 6h10" />
+  </svg>
+);
+
+export const WinMaximizeIcon: React.FC<IconProps> = ({ size = 11, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <rect x="1.5" y="1.5" width="9" height="9" />
+  </svg>
+);
+
+export const WinRestoreIcon: React.FC<IconProps> = ({ size = 11, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.1"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <rect x="3.5" y="1.5" width="7" height="7" />
+    <path d="M1.5 4.5v6h6" />
+  </svg>
+);
+
+export const WinCloseIcon: React.FC<IconProps> = ({ size = 11, style, className }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 12 12"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.2"
+    strokeLinecap="round"
+    style={{ display: "inline-block", verticalAlign: "middle", ...style }}
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M2 2l8 8M10 2l-8 8" />
+  </svg>
+);
+
+
 
